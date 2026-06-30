@@ -14,7 +14,7 @@ using Sunless.Game.UI.Menus;
 
 namespace SunlessQoL
 {
-    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.17.8")]
+    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.17.9")]
     public class QoLPlugin : BaseUnityPlugin
     {
         public const string GUID = "uptoh.sunless.manythings";
@@ -52,8 +52,8 @@ namespace SunlessQoL
         // ---- ui ----
         private bool _show;
         private int _tab;
-        private static readonly string[] TabNames = { "Zee Law", "7 Numbers", "The Ship", "The Crew", "Bank" };
-        private Rect _rect = new Rect(70f, 70f, 460f, 0f);
+        private static readonly string[] TabNames = { "Zee Law", "7 Numbers", "The Ship", "The Crew", "Ityms", "Bank" };
+        private Rect _rect = new Rect(70f, 70f, 540f, 0f);
         private string _status = "";
         private GUIStyle _header;
         private bool _styled;
@@ -81,6 +81,12 @@ namespace SunlessQoL
         private bool _shipLoaded;
         private string _crew = "";
         private bool _crewLoaded;
+
+        // ---- Ityms panel: spawn hold items by search ----
+        private System.Collections.Generic.List<Quality> _allHoldItems;
+        private Vector2 _itemScroll;
+        private string _itemSearch = "";
+        private string _itemAmount = "1";
 
         // ---- Bank panel (unlimited persistent storage, keyed by per-run character id) ----
         private static System.Collections.Generic.Dictionary<string, System.Collections.Generic.Dictionary<int, int>> _bank;
@@ -641,6 +647,7 @@ namespace SunlessQoL
                 _selectedShip = false;
                 _shipLoaded = false;
                 _crewLoaded = false;
+                _itemScroll = Vector2.zero;
             }
             GUILayout.Space(6f);
 
@@ -648,6 +655,7 @@ namespace SunlessQoL
             else if (_tab == 1) DrawSevenNumbers();
             else if (_tab == 2) DrawTheShip();
             else if (_tab == 3) DrawTheCrew();
+            else if (_tab == 4) DrawItyms();
             else DrawBank();
 
             GUILayout.Space(8f);
@@ -1164,6 +1172,139 @@ namespace SunlessQoL
                 Log.LogInfo(_status);
             }
             catch (Exception ex) { _status = "Crew error: " + ex.Message; Log.LogError(ex); }
+        }
+
+        // ===================== Ityms panel =====================
+
+        private System.Collections.Generic.List<Quality> AllHoldItems()
+        {
+            if (_allHoldItems != null) return _allHoldItems;
+            _allHoldItems = new System.Collections.Generic.List<Quality>();
+            try
+            {
+                System.Collections.Generic.IList<Quality> all =
+                    QualityRepository.Instance.GetAllQualityContentEagerly();
+                if (all != null)
+                {
+                    foreach (Quality q in all)
+                    {
+                        if (q == null) continue;
+                        if (q.Nature != FailBetter.Core.Enums.Nature.Thing) continue;
+                        if (q.AssignToSlot != null || q.IsSlot) continue;
+                        if (!IsCargo(q) && !IsCuriosity(q)) continue;
+                        _allHoldItems.Add(q);
+                    }
+                    _allHoldItems.Sort(delegate(Quality a, Quality b)
+                    {
+                        string an = a != null && a.Name != null ? a.Name : "";
+                        string bn = b != null && b.Name != null ? b.Name : "";
+                        return string.Compare(an, bn, StringComparison.OrdinalIgnoreCase);
+                    });
+                }
+            }
+            catch (Exception e) { Log.LogError("AllHoldItems build failed: " + e); }
+            return _allHoldItems;
+        }
+
+        private void DrawItyms()
+        {
+            GameProvider gp = GameProvider.Instance;
+            if (gp == null || gp.CurrentCharacter == null)
+            {
+                GUILayout.Label("No game in progress.");
+                return;
+            }
+
+            GUILayout.Label("Spawn cargo or curiosities into your hold.", _header);
+            GUILayout.Space(4f);
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Search", GUILayout.Width(55f));
+            string newSearch = GUILayout.TextField(_itemSearch ?? "", GUILayout.Width(245f));
+            if (newSearch != _itemSearch) { _itemSearch = newSearch; _itemScroll = Vector2.zero; }
+            GUILayout.Label("Amount", GUILayout.Width(55f));
+            _itemAmount = GUILayout.TextField(_itemAmount ?? "1", GUILayout.Width(60f));
+            GUILayout.EndHorizontal();
+
+            int amount = ParseItemAmount();
+            System.Collections.Generic.List<Quality> options = FilteredHoldItems(_itemSearch);
+            GUILayout.Label(options.Count + " matching ityms" + (amount > 0 ? "   +" + amount + " each click" : ""));
+
+            float viewHeight = 300f;
+            float rowHeight = 28f;
+            int first = 0;
+            if (options.Count > 0) first = ((int)(_itemScroll.y / rowHeight)) - 2;
+            if (first < 0) first = 0;
+            int visible = ((int)(viewHeight / rowHeight)) + 7;
+            int last = first + visible;
+            if (last > options.Count) last = options.Count;
+
+            Quality chosen = null;
+            _itemScroll = GUILayout.BeginScrollView(_itemScroll, GUILayout.Height(viewHeight));
+            if (first > 0) GUILayout.Space(first * rowHeight);
+            for (int i = first; i < last; i++)
+            {
+                Quality q = options[i];
+                string kind = IsCargo(q) ? "Cargo" : "Curiosity";
+                if (GUILayout.Button(q.Name + "  [" + kind + "]", GUILayout.Height(24f))) chosen = q;
+            }
+            if (last < options.Count) GUILayout.Space((options.Count - last) * rowHeight);
+            GUILayout.EndScrollView();
+
+            if (chosen != null) SpawnItem(gp.CurrentCharacter, chosen, amount);
+        }
+
+        private int ParseItemAmount()
+        {
+            int amount;
+            if (!int.TryParse((_itemAmount ?? "").Trim(), out amount)) return 0;
+            if (amount < 0) amount = 0;
+            return amount;
+        }
+
+        private System.Collections.Generic.List<Quality> FilteredHoldItems(string search)
+        {
+            System.Collections.Generic.List<Quality> result = new System.Collections.Generic.List<Quality>();
+            string s = (search ?? "").Trim();
+            foreach (Quality q in AllHoldItems())
+            {
+                if (q == null) continue;
+                if (s.Length > 0)
+                {
+                    string name = q.Name ?? "";
+                    string desc = q.Description ?? "";
+                    if (name.IndexOf(s, StringComparison.OrdinalIgnoreCase) < 0 &&
+                        desc.IndexOf(s, StringComparison.OrdinalIgnoreCase) < 0 &&
+                        q.Id.ToString().IndexOf(s, StringComparison.OrdinalIgnoreCase) < 0)
+                        continue;
+                }
+                result.Add(q);
+            }
+            return result;
+        }
+
+        private void SpawnItem(Character ch, Quality listQuality, int amount)
+        {
+            try
+            {
+                if (ch == null || listQuality == null) return;
+                if (amount <= 0)
+                {
+                    _status = "Enter a positive amount.";
+                    return;
+                }
+                Quality q = Canonical(listQuality.Id);
+                if (q == null) q = listQuality;
+                ch.ModifyQualityPossessed(q, amount);
+                _status = "Spawned " + amount + " " + q.Name + ".";
+                Log.LogInfo(_status);
+                RefreshEchoes();
+            }
+            catch (Exception e)
+            {
+                _status = "Spawn failed: " + e.Message;
+                Log.LogError(e);
+            }
         }
 
         // ===================== Bank panel =====================

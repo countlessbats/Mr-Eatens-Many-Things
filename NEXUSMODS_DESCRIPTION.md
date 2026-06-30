@@ -48,6 +48,11 @@ This is a BepInEx 5 plugin for Sunless Sea. The main download is a drop-in packa
 - Assign officers into officer slots.
 - Remove officers from officer slots.
 
+**Ityms**
+
+- Search all cargo and curiosity items.
+- Spawn any amount of a selected item into your hold.
+
 **Bank**
 
 - Unlimited persistent item storage.

@@ -4,7 +4,7 @@ Cheat and quality-of-life mod for **Sunless Sea**.
 
 Author: countlessbats
 
-Current version: **2.17.8**
+Current version: **2.17.9**
 
 ## What It Does
 
@@ -32,6 +32,9 @@ Features:
 - **The Crew**
   - Set Crew.
   - Assign and remove officers from officer slots.
+- **Ityms**
+  - Search all cargo and curiosity items.
+  - Spawn any amount of a selected item into your hold.
 - **Bank**
   - Unlimited persistent item storage.
   - ESC-menu banking UI.
