@@ -14,7 +14,7 @@ using Sunless.Game.UI.Menus;
 
 namespace SunlessQoL
 {
-    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.17.2")]
+    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.17.3")]
     public class QoLPlugin : BaseUnityPlugin
     {
         public const string GUID = "uptoh.sunless.manythings";
@@ -103,7 +103,7 @@ namespace SunlessQoL
                 new ConfigDescription("Multiplier for incoming Hull damage.",
                     new AcceptableValueRange<float>(0f, 2f)));
             _disableExplosions = Config.Bind("ZeeLaw", "DisableExplosions", false,
-                "When true, engine boost still works, but peculiar noises never build up to an explosion.");
+                "When true, engine boost still works, but engine heat cannot build up.");
             _previewTerror = Config.Bind("ZeeLaw", "PreviewTerror", false,
                 "When true, Terror storylet preview icons show the exact amount.");
             _accel = Config.Bind("TimeAcceleration", "Factor", 3f,
@@ -121,12 +121,15 @@ namespace SunlessQoL
                 Harmony h = new Harmony(GUID);
                 h.PatchAll(typeof(MainMenuPatch));
                 h.PatchAll(typeof(HullDamagePatch));
-                h.PatchAll(typeof(PeculiarNoisesPatch));
+                h.PatchAll(typeof(EngineHeatPatch));
+                h.PatchAll(typeof(EngineTargetHeatPatch));
+                h.PatchAll(typeof(EngineRecalculateHeatPatch));
                 h.PatchAll(typeof(TerrorPreviewPatch));
                 h.PatchAll(typeof(GazetteerBankTabPatch));
                 h.PatchAll(typeof(NativeBankDockPatch));
                 h.PatchAll(typeof(NativeBankUndockPatch));
-                Logger.LogInfo("Mr Eaten's Many Things loaded; ESC-menu + hull-damage + engine-heat + terror-preview + port-Bank-tab patched.");
+                h.PatchAll(typeof(NativeBankOpenPatch));
+                Logger.LogInfo("Mr Eaten's Many Things loaded; ESC-menu + hull-damage + engine-heat + terror-preview + London-Bank-tab patched.");
             }
             catch (Exception e)
             {
@@ -162,13 +165,23 @@ namespace SunlessQoL
             SetNativeBankTabVisible(false);
         }
 
+        internal static void RefreshNativeBankTab()
+        {
+            SetNativeBankTabVisible(IsCurrentPortLondon());
+        }
+
         private static bool IsCurrentPortLondon()
         {
             try
             {
                 GameProvider gp = GameProvider.Instance;
                 if (gp == null || gp.CurrentCharacter == null) return false;
-                return IsLondonPort(gp.CurrentCharacter.CurrentPort);
+                if (IsLondonPort(gp.CurrentCharacter.CurrentPort)) return true;
+                FailBetter.Core.Area area = gp.CurrentCharacter.CurrentArea;
+                if (area != null && area.Id == FallenLondonAreaId) return true;
+                if (area != null && !string.IsNullOrEmpty(area.Name) &&
+                    area.Name.IndexOf("London", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+                return false;
             }
             catch { return false; }
         }
@@ -176,7 +189,10 @@ namespace SunlessQoL
         private static bool IsLondonPort(Sunless.Game.Entities.Geography.PortDatum port)
         {
             if (port == null) return false;
+            if (port.IsStartingPort) return true;
             if (port.Area != null && port.Area.Id == FallenLondonAreaId) return true;
+            if (port.Area != null && !string.IsNullOrEmpty(port.Area.Name) &&
+                port.Area.Name.IndexOf("London", StringComparison.OrdinalIgnoreCase) >= 0) return true;
             return string.Equals(port.Name, "Fallen London", StringComparison.OrdinalIgnoreCase);
         }
 
@@ -1515,6 +1531,15 @@ namespace SunlessQoL
         }
     }
 
+    [HarmonyPatch(typeof(Sunless.Game.UI.Gazetteer.Gazetteer), "Open")]
+    public static class NativeBankOpenPatch
+    {
+        private static void Postfix()
+        {
+            QoLPlugin.RefreshNativeBankTab();
+        }
+    }
+
     // Scales ALL hull damage the player takes. Every damage source (combat
     // attacks, ramming, terrain collisions, mines) reduces hull via
     // MoveBoat.set_Hull, so a single prefix that scales strict DECREASES
@@ -1547,12 +1572,40 @@ namespace SunlessQoL
         }
     }
 
-    [HarmonyPatch(typeof(MoveBoat), "set_PeculiarNoises")]
-    public static class PeculiarNoisesPatch
+    [HarmonyPatch(typeof(MoveBoat), "set_EngineTemperature")]
+    public static class EngineHeatPatch
     {
-        private static void Prefix(ref int value)
+        private static void Prefix(ref float value)
         {
-            if (QoLPlugin.DisableExplosions) value = 0;
+            if (QoLPlugin.DisableExplosions) value = 0f;
+        }
+    }
+
+    [HarmonyPatch(typeof(MoveBoat), "set_TargetEngineTemperature")]
+    public static class EngineTargetHeatPatch
+    {
+        private static void Prefix(ref float value)
+        {
+            if (QoLPlugin.DisableExplosions) value = 0f;
+        }
+    }
+
+    [HarmonyPatch(typeof(NavigationProvider), "RecalculateEngineTempurature")]
+    public static class EngineRecalculateHeatPatch
+    {
+        private static void Postfix(NavigationProvider __instance)
+        {
+            try
+            {
+                if (!QoLPlugin.DisableExplosions || __instance == null || __instance.Boat == null) return;
+                __instance.Boat.TargetEngineTemperature = 0f;
+                __instance.Boat.EngineTemperature = 0f;
+                __instance.Boat.PeculiarNoises = 0;
+            }
+            catch (Exception e)
+            {
+                QoLPlugin.Log.LogError("Engine heat suppression failed: " + e);
+            }
         }
     }
 

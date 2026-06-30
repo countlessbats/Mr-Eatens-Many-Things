@@ -18,7 +18,7 @@ This is a BepInEx 5 plugin for Sunless Sea. The main download is a drop-in packa
 - Change Hunger gain from 0.0x to 2.0x.
 - Change Fuel consumption from 0.0x to 2.0x.
 - Change incoming Hull damage from 0.0x to 2.0x.
-- Disable engine explosion buildup while keeping Full Speed Ahead active.
+- Disable engine heat buildup while keeping Full Speed Ahead active.
 - Preview exact Terror gains on storylet branch descriptions.
 - Grant Something Awaits You with a configurable hotkey, including the normal log message.
 - Time acceleration with configurable toggle and hold keys.

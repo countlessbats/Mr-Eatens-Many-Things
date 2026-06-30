@@ -4,7 +4,7 @@ Cheat and quality-of-life mod for **Sunless Sea**.
 
 Author: countlessbats
 
-Current version: **2.17.2**
+Current version: **2.17.3**
 
 ## What It Does
 
@@ -17,7 +17,7 @@ Features:
   - Adjust Hunger gain from `0.0x` to `2.0x`.
   - Adjust Fuel consumption from `0.0x` to `2.0x`.
   - Adjust incoming Hull damage from `0.0x` to `2.0x`.
-  - Disable engine explosion buildup while keeping Full Speed Ahead active.
+  - Disable engine heat buildup while keeping Full Speed Ahead active.
   - Preview exact Terror gains on storylet branch descriptions.
   - Grant Something Awaits You with a configurable hotkey, including the normal log message.
   - Time acceleration with configurable toggle and hold keys.
