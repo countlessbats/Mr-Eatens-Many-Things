@@ -14,7 +14,7 @@ using Sunless.Game.UI.Menus;
 
 namespace SunlessQoL
 {
-    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.17.1")]
+    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.17.2")]
     public class QoLPlugin : BaseUnityPlugin
     {
         public const string GUID = "uptoh.sunless.manythings";
@@ -626,7 +626,10 @@ namespace SunlessQoL
             if (!string.IsNullOrEmpty(_status))
                 GUILayout.Label(_status);
             if (GUILayout.Button("Close"))
+            {
+                CommitFocusedNumber();
                 _show = false;
+            }
 
             GUI.DragWindow(new Rect(0f, 0f, 100000f, 20f));
         }
@@ -735,6 +738,15 @@ namespace SunlessQoL
             if (string.IsNullOrEmpty(f) || !f.StartsWith("num")) return -1;
             int idx;
             return int.TryParse(f.Substring(3), out idx) ? idx : -1;
+        }
+
+        private void CommitFocusedNumber()
+        {
+            if (_tab != 1) return;
+            int idx = FocusedNumIndex();
+            if (idx < 0 && _lastFocus != null && _lastFocus.StartsWith("num"))
+                int.TryParse(_lastFocus.Substring(3), out idx);
+            if (idx >= 0 && idx < NumNames.Length) ConfirmNumber(idx);
         }
 
         private static Quality QualityFor(int i)

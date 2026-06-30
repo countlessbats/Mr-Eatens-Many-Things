@@ -4,7 +4,7 @@ Cheat and quality-of-life mod for **Sunless Sea**.
 
 Author: countlessbats
 
-Current version: **2.17.1**
+Current version: **2.17.2**
 
 ## What It Does
 
