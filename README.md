@@ -4,7 +4,7 @@ Cheat and quality-of-life mod for **Sunless Sea**.
 
 Author: countlessbats
 
-Current version: **2.17.9**
+Current version: **2.18.1**
 
 ## What It Does
 
@@ -21,6 +21,7 @@ Features:
   - Preview exact Terror gains on storylet branch descriptions.
   - Grant Something Awaits You with a configurable hotkey, including the normal log message.
   - Time acceleration with configurable toggle and hold keys.
+  - Skip startup logos and the title-screen fade-up.
 - **7 Numbers**
   - Set Iron, Mirrors, Pages, Hearts, and Veils.
   - Set Hunger, Terror, and Wounds.
@@ -29,6 +30,7 @@ Features:
   - Set Hull.
   - Swap to any ship.
   - Equip and unequip valid ship equipment in Deck, Forward, Aft, Auxiliary, Bridge, and Engines slots.
+  - Equip and unequip combat item slots with a searchable valid-item picker.
 - **The Crew**
   - Set Crew.
   - Assign and remove officers from officer slots.

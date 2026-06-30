@@ -14,7 +14,7 @@ using Sunless.Game.UI.Menus;
 
 namespace SunlessQoL
 {
-    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.17.9")]
+    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.18.1")]
     public class QoLPlugin : BaseUnityPlugin
     {
         public const string GUID = "uptoh.sunless.manythings";
@@ -24,7 +24,7 @@ namespace SunlessQoL
 
         // ---- config (persisted to BepInEx/config) ----
         private ConfigEntry<float> _terror, _hunger, _fuel, _damage;
-        private ConfigEntry<bool> _disableExplosions, _previewTerror;
+        private ConfigEntry<bool> _disableExplosions, _previewTerror, _skipFrontMatter;
         private ConfigEntry<float> _accel;
         private ConfigEntry<KeyCode> _toggleKey, _holdKey, _sayKey;
 
@@ -32,6 +32,8 @@ namespace SunlessQoL
         internal static float DamageMult = 1f;
         internal static bool DisableExplosions;
         internal static bool PreviewTerror;
+        internal static bool SkipFrontMatter;
+        internal static bool SkipNextTitleFade;
         private const float EngineHeatCap = 10f;
         private const int FallenLondonAreaId = 100321;
         private static Sunless.Game.UI.Gazetteer.Tab _nativeBankTab;
@@ -71,9 +73,11 @@ namespace SunlessQoL
             { "Deck", "Forward", "Aft", "Auxiliary", "Bridge", "Engines" };
         private int _selectedSlot = -1;       // -1 = paperdoll; 0..5 = gear list for that slot
         private Vector2 _gearScroll;
+        private string _gearSearch = "";
         private System.Collections.Generic.List<Quality> _allGear;
         private System.Collections.Generic.Dictionary<int, System.Collections.Generic.List<Quality>> _gearBySlot;
         private System.Collections.Generic.List<Quality> _officerSlots;
+        private System.Collections.Generic.List<Quality> _combatSlots;
         private System.Collections.Generic.List<Quality> _ships;
         private bool _selectedShip;
         private static System.Reflection.MethodInfo _getByIdMethod;
@@ -113,6 +117,8 @@ namespace SunlessQoL
                 "When true, engine boost still works, but engine heat is capped low enough to prevent fires and explosions.");
             _previewTerror = Config.Bind("ZeeLaw", "PreviewTerror", false,
                 "When true, Terror storylet preview icons show the exact amount.");
+            _skipFrontMatter = Config.Bind("ZeeLaw", "SkipFrontMatter", true,
+                "When true, skip startup logos and the title-screen fade-up.");
             _accel = Config.Bind("TimeAcceleration", "Factor", 3f,
                 new ConfigDescription("Time acceleration multiplier.",
                     new AcceptableValueRange<float>(1f, 10f)));
@@ -133,6 +139,9 @@ namespace SunlessQoL
             PatchOne(h, typeof(NativeBankDockPatch));
             PatchOne(h, typeof(NativeBankUndockPatch));
             PatchOne(h, typeof(NativeBankOpenPatch));
+            PatchOne(h, typeof(IntroSkipPatch));
+            PatchOne(h, typeof(TitleFadeSkipPatch));
+            PatchOne(h, typeof(TransitionFadeSkipPatch));
             Logger.LogInfo("Mr Eaten's Many Things loaded; patch registration finished.");
         }
 
@@ -455,6 +464,7 @@ namespace SunlessQoL
             DamageMult = _damage.Value;
             DisableExplosions = _disableExplosions != null && _disableExplosions.Value;
             PreviewTerror = _previewTerror != null && _previewTerror.Value;
+            SkipFrontMatter = _skipFrontMatter == null || _skipFrontMatter.Value;
             try { ApplyRateConstants(); }
             catch (Exception e) { Log.LogError("ApplyRateConstants threw: " + e); }
             try { HandleKeys(); }
@@ -644,6 +654,7 @@ namespace SunlessQoL
                 _numLoaded = false;
                 _lastFocus = "";
                 _selectedSlot = -1;
+                _gearSearch = "";
                 _selectedShip = false;
                 _shipLoaded = false;
                 _crewLoaded = false;
@@ -716,6 +727,10 @@ namespace SunlessQoL
 
             GUILayout.Label(_accelerating ? "Status: ACCELERATING x" + _accel.Value.ToString("0.0")
                                           : "Status: normal speed");
+
+            GUILayout.Space(12f);
+            GUILayout.Label("STARTUP", _header);
+            _skipFrontMatter.Value = GUILayout.Toggle(_skipFrontMatter.Value, "Skip Front Matter");
         }
 
         private void DrawSevenNumbers()
@@ -904,6 +919,19 @@ namespace SunlessQoL
             return _officerSlots;
         }
 
+        private System.Collections.Generic.List<Quality> CombatSlots()
+        {
+            if (_combatSlots != null) return _combatSlots;
+            _combatSlots = new System.Collections.Generic.List<Quality>();
+            try
+            {
+                foreach (Quality q in WellKnownQualityProvider.CombatEquipmentSlots)
+                    if (q != null) _combatSlots.Add(q);
+            }
+            catch (Exception e) { Log.LogError("CombatSlots build failed: " + e); }
+            return _combatSlots;
+        }
+
         // Slot set depends on the active tab: The Ship -> ship slots, The Crew -> officer slots.
         private Quality CurSlotQ(int i)
         {
@@ -912,12 +940,19 @@ namespace SunlessQoL
                 System.Collections.Generic.List<Quality> l = OfficerSlots();
                 return (i >= 0 && i < l.Count) ? l[i] : null;
             }
+            if (_tab == 2 && i >= 100)
+            {
+                System.Collections.Generic.List<Quality> l = CombatSlots();
+                int c = i - 100;
+                return (c >= 0 && c < l.Count) ? l[c] : null;
+            }
             return SlotQuality(i);
         }
 
         private string CurSlotName(int i)
         {
             if (_tab == 3) { Quality q = CurSlotQ(i); return q != null ? q.Name : "?"; }
+            if (_tab == 2 && i >= 100) { Quality q = CurSlotQ(i); return q != null ? q.Name : "?"; }
             return (i >= 0 && i < SlotNames.Length) ? SlotNames[i] : "?";
         }
 
@@ -1035,10 +1070,10 @@ namespace SunlessQoL
             GUILayout.EndHorizontal();
 
             GUILayout.Space(8f);
-            GUILayout.Label("Combat-item slots (not yet editable):");
-            GUILayout.BeginHorizontal();
-            for (int s = 0; s < 6; s++) GUILayout.Box("-", GUILayout.Width(40f), GUILayout.Height(30f));
-            GUILayout.EndHorizontal();
+            GUILayout.Label("Combat-item slots (click a slot to assign):", _header);
+            System.Collections.Generic.List<Quality> combat = CombatSlots();
+            if (combat.Count == 0) GUILayout.Label("(No combat item slots found.)");
+            for (int s = 0; s < combat.Count; s++) SlotButton(100 + s);
         }
 
         private void DrawShipList()
@@ -1498,6 +1533,7 @@ namespace SunlessQoL
             {
                 _selectedSlot = i;
                 _gearScroll = Vector2.zero;
+                _gearSearch = "";
                 Log.LogInfo("Slot " + CurSlotName(i) + " (id " + CurSlotId(i) + "): " +
                     GearForSlot(i).Count + " options.");
             }
@@ -1507,14 +1543,20 @@ namespace SunlessQoL
         private void DrawGearList()
         {
             int i = _selectedSlot;
-            GUILayout.Label((_tab == 3 ? "Assign: " : "Fit gear: ") + CurSlotName(i), _header);
+            GUILayout.Label((_tab == 3 ? "Assign: " : "Fit: ") + CurSlotName(i), _header);
 
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("< Back", GUILayout.Width(80f))) { _selectedSlot = -1; return; }
             if (GUILayout.Button("Empty this slot")) { RemoveGear(i); _selectedSlot = -1; return; }
             GUILayout.EndHorizontal();
 
-            System.Collections.Generic.List<Quality> options = GearForSlot(i);
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Search", GUILayout.Width(55f));
+            string newSearch = GUILayout.TextField(_gearSearch ?? "", GUILayout.Width(250f));
+            if (newSearch != _gearSearch) { _gearSearch = newSearch; _gearScroll = Vector2.zero; }
+            GUILayout.EndHorizontal();
+
+            System.Collections.Generic.List<Quality> options = FilterGearOptions(GearForSlot(i), _gearSearch);
             if (options.Count == 0)
                 GUILayout.Label("(No gear found for this slot.)");
             else
@@ -1541,6 +1583,28 @@ namespace SunlessQoL
             GUILayout.EndScrollView();
 
             if (chosen != null) { EquipGear(i, chosen); _selectedSlot = -1; }
+        }
+
+        private System.Collections.Generic.List<Quality> FilterGearOptions(System.Collections.Generic.List<Quality> source, string search)
+        {
+            System.Collections.Generic.List<Quality> result = new System.Collections.Generic.List<Quality>();
+            string s = (search ?? "").Trim();
+            if (source == null) return result;
+            foreach (Quality q in source)
+            {
+                if (q == null) continue;
+                if (s.Length > 0)
+                {
+                    string name = q.Name ?? "";
+                    string desc = q.Description ?? "";
+                    if (name.IndexOf(s, StringComparison.OrdinalIgnoreCase) < 0 &&
+                        desc.IndexOf(s, StringComparison.OrdinalIgnoreCase) < 0 &&
+                        q.Id.ToString().IndexOf(s, StringComparison.OrdinalIgnoreCase) < 0)
+                        continue;
+                }
+                result.Add(q);
+            }
+            return result;
         }
 
         private void EquipGear(int slotIndex, Quality gear)
@@ -1718,6 +1782,45 @@ namespace SunlessQoL
         private static void Postfix()
         {
             QoLPlugin.RefreshNativeBankTab();
+        }
+    }
+
+    [HarmonyPatch(typeof(Sunless.Game.Scripts.UI.Intro.IntroScript), "Start")]
+    public static class IntroSkipPatch
+    {
+        private static bool Prefix()
+        {
+            if (!QoLPlugin.SkipFrontMatter) return true;
+            try
+            {
+                UnityEngine.Application.LoadLevelAsync("TitleScreen");
+                return false;
+            }
+            catch (Exception e)
+            {
+                QoLPlugin.Log.LogError("Skipping startup front matter failed: " + e);
+                return true;
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(Sunless.Game.Scripts.Menus.TitleScreenInit), "Start")]
+    public static class TitleFadeSkipPatch
+    {
+        private static void Prefix()
+        {
+            if (QoLPlugin.SkipFrontMatter) QoLPlugin.SkipNextTitleFade = true;
+        }
+    }
+
+    [HarmonyPatch(typeof(Sunless.Game.ApplicationProviders.TransitionProvider), "FadeIn", new Type[] { typeof(float) })]
+    public static class TransitionFadeSkipPatch
+    {
+        private static void Prefix(ref float duration)
+        {
+            if (!QoLPlugin.SkipFrontMatter || !QoLPlugin.SkipNextTitleFade) return;
+            QoLPlugin.SkipNextTitleFade = false;
+            duration = 0f;
         }
     }
 
