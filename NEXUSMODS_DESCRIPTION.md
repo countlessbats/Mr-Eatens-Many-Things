@@ -113,7 +113,7 @@ Do not delete BepInEx if other mods depend on it.
 
 Source is available on GitHub:
 
-https://github.com/sevrlbats/Mr-Eatens-Many-Things
+https://github.com/countlessbats/Mr-Eatens-Many-Things
 
 Build requirements:
 
