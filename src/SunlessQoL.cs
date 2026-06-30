@@ -14,7 +14,7 @@ using Sunless.Game.UI.Menus;
 
 namespace SunlessQoL
 {
-    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.17.6")]
+    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.17.7")]
     public class QoLPlugin : BaseUnityPlugin
     {
         public const string GUID = "uptoh.sunless.manythings";
@@ -1582,16 +1582,16 @@ namespace SunlessQoL
 
             string result = "";
             if (success.HasValue && failure.HasValue && success.Value != failure.Value)
-                result = "Terror: success " + Signed(success.Value) + " / failure " + Signed(failure.Value);
+                result = "Terror: Success " + Signed(success.Value) + " / Failure " + Signed(failure.Value);
             else if (success.HasValue)
                 result = "Terror: " + Signed(success.Value);
             else if (failure.HasValue)
                 result = "Terror: " + Signed(failure.Value);
 
             if (rareSuccess.HasValue)
-                result += (result.Length == 0 ? "Terror: " : " / ") + "rare success " + Signed(rareSuccess.Value);
+                result += (result.Length == 0 ? "Terror: " : " / ") + "Rare Success " + Signed(rareSuccess.Value);
             if (rareFailure.HasValue)
-                result += (result.Length == 0 ? "Terror: " : " / ") + "rare failure " + Signed(rareFailure.Value);
+                result += (result.Length == 0 ? "Terror: " : " / ") + "Rare Failure " + Signed(rareFailure.Value);
             if (result.Length == 0 && branch.ResultEvents != null)
             {
                 foreach (FailBetter.Core.Event ev in branch.ResultEvents)
