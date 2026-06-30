@@ -18,9 +18,9 @@ This is a BepInEx 5 plugin for Sunless Sea. The main download is a drop-in packa
 - Change Hunger gain from 0.0x to 2.0x.
 - Change Fuel consumption from 0.0x to 2.0x.
 - Change incoming Hull damage from 0.0x to 2.0x.
-- Disable engine heat/explosions.
+- Disable engine explosion buildup while keeping Full Speed Ahead active.
 - Preview exact Terror gains on storylet branch descriptions.
-- Grant Something Awaits You with a configurable hotkey.
+- Grant Something Awaits You with a configurable hotkey, including the normal log message.
 - Time acceleration with configurable toggle and hold keys.
 
 **7 Numbers**
@@ -52,7 +52,7 @@ This is a BepInEx 5 plugin for Sunless Sea. The main download is a drop-in packa
 
 - Unlimited persistent item storage.
 - Deposit and withdraw from the mod's ESC-menu Bank tab.
-- Native port-only Gazetteer Bank tab.
+- Native Gazetteer Bank tab in London.
 - Cargo and Curiosities sections.
 - Click an item in your hold to deposit all of it.
 - Click an item in the bank to withdraw all of it.

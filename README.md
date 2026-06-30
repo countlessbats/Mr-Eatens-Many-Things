@@ -4,7 +4,7 @@ Cheat and quality-of-life mod for **Sunless Sea**.
 
 Author: countlessbats
 
-Current version: **2.17.0**
+Current version: **2.17.1**
 
 ## What It Does
 
@@ -17,9 +17,9 @@ Features:
   - Adjust Hunger gain from `0.0x` to `2.0x`.
   - Adjust Fuel consumption from `0.0x` to `2.0x`.
   - Adjust incoming Hull damage from `0.0x` to `2.0x`.
-  - Disable engine heat/explosions.
+  - Disable engine explosion buildup while keeping Full Speed Ahead active.
   - Preview exact Terror gains on storylet branch descriptions.
-  - Grant Something Awaits You with a configurable hotkey.
+  - Grant Something Awaits You with a configurable hotkey, including the normal log message.
   - Time acceleration with configurable toggle and hold keys.
 - **7 Numbers**
   - Set Iron, Mirrors, Pages, Hearts, and Veils.
@@ -35,7 +35,7 @@ Features:
 - **Bank**
   - Unlimited persistent item storage.
   - ESC-menu banking UI.
-  - Native port-only Gazetteer Bank tab.
+  - Native Gazetteer Bank tab in London.
   - Cargo and Curiosities sections.
   - Storage is keyed by a per-run captain id rather than captain name, so names are not reserved forever.
 

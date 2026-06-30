@@ -14,7 +14,7 @@ using Sunless.Game.UI.Menus;
 
 namespace SunlessQoL
 {
-    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.17.0")]
+    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.17.1")]
     public class QoLPlugin : BaseUnityPlugin
     {
         public const string GUID = "uptoh.sunless.manythings";
@@ -32,6 +32,9 @@ namespace SunlessQoL
         internal static float DamageMult = 1f;
         internal static bool DisableExplosions;
         internal static bool PreviewTerror;
+        private const int FallenLondonAreaId = 100321;
+        private static Sunless.Game.UI.Gazetteer.Tab _nativeBankTab;
+        private static System.Reflection.FieldInfo _tabButtonField;
 
         // ---- captured vanilla nav-constant defaults (grabbed once) ----
         private bool _captured;
@@ -100,7 +103,7 @@ namespace SunlessQoL
                 new ConfigDescription("Multiplier for incoming Hull damage.",
                     new AcceptableValueRange<float>(0f, 2f)));
             _disableExplosions = Config.Bind("ZeeLaw", "DisableExplosions", false,
-                "When true, engine heat is clamped to zero so boosting cannot overheat or explode.");
+                "When true, engine boost still works, but peculiar noises never build up to an explosion.");
             _previewTerror = Config.Bind("ZeeLaw", "PreviewTerror", false,
                 "When true, Terror storylet preview icons show the exact amount.");
             _accel = Config.Bind("TimeAcceleration", "Factor", 3f,
@@ -118,9 +121,11 @@ namespace SunlessQoL
                 Harmony h = new Harmony(GUID);
                 h.PatchAll(typeof(MainMenuPatch));
                 h.PatchAll(typeof(HullDamagePatch));
-                h.PatchAll(typeof(EngineHeatActualPatch));
+                h.PatchAll(typeof(PeculiarNoisesPatch));
                 h.PatchAll(typeof(TerrorPreviewPatch));
                 h.PatchAll(typeof(GazetteerBankTabPatch));
+                h.PatchAll(typeof(NativeBankDockPatch));
+                h.PatchAll(typeof(NativeBankUndockPatch));
                 Logger.LogInfo("Mr Eaten's Many Things loaded; ESC-menu + hull-damage + engine-heat + terror-preview + port-Bank-tab patched.");
             }
             catch (Exception e)
@@ -139,6 +144,56 @@ namespace SunlessQoL
         internal static void RenderBankFromTab()
         {
             if (Instance != null) Instance.RenderBank();
+        }
+
+        internal static void RegisterNativeBankTab(Sunless.Game.UI.Gazetteer.Tab tab)
+        {
+            _nativeBankTab = tab;
+            SetNativeBankTabVisible(IsCurrentPortLondon());
+        }
+
+        internal static void SetNativeBankTabVisibleForPort(Sunless.Game.Entities.Geography.PortDatum port)
+        {
+            SetNativeBankTabVisible(IsLondonPort(port));
+        }
+
+        internal static void HideNativeBankTab()
+        {
+            SetNativeBankTabVisible(false);
+        }
+
+        private static bool IsCurrentPortLondon()
+        {
+            try
+            {
+                GameProvider gp = GameProvider.Instance;
+                if (gp == null || gp.CurrentCharacter == null) return false;
+                return IsLondonPort(gp.CurrentCharacter.CurrentPort);
+            }
+            catch { return false; }
+        }
+
+        private static bool IsLondonPort(Sunless.Game.Entities.Geography.PortDatum port)
+        {
+            if (port == null) return false;
+            if (port.Area != null && port.Area.Id == FallenLondonAreaId) return true;
+            return string.Equals(port.Name, "Fallen London", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void SetNativeBankTabVisible(bool visible)
+        {
+            try
+            {
+                if (_nativeBankTab == null) return;
+                _nativeBankTab.SetActiveState(visible);
+                if (_tabButtonField == null)
+                    _tabButtonField = typeof(Sunless.Game.UI.Gazetteer.Tab).GetField("_theButton",
+                        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+                if (_tabButtonField == null) return;
+                UnityEngine.UI.Button b = _tabButtonField.GetValue(_nativeBankTab) as UnityEngine.UI.Button;
+                if (b != null && b.gameObject != null) b.gameObject.SetActive(visible);
+            }
+            catch (Exception e) { Log.LogError("Native Bank tab visibility failed: " + e); }
         }
 
         // Renders the bank natively into the Gazetteer's two book pages as grids of
@@ -486,6 +541,7 @@ namespace SunlessQoL
                 {
                     if (nav.Boat != null) nav.Boat.SomethingAwaitsYou = 1;
                     nav.ShowHideSAYIcon(true);
+                    nav.ProgressPanelUpdate(Sunless.Game.Formatters.LogEntries.AsLogEntry("Something awaits you..."), null);
                 }
                 _status = "Something Awaits You.";
             }
@@ -1424,8 +1480,26 @@ namespace SunlessQoL
     {
         private static void Postfix(Sunless.Game.UI.Gazetteer.Gazetteer __instance)
         {
-            try { __instance.AddTab("Bank", new Action(QoLPlugin.RenderBankFromTab), false); }
+            try { QoLPlugin.RegisterNativeBankTab(__instance.AddTab("Bank", new Action(QoLPlugin.RenderBankFromTab), false)); }
             catch (Exception e) { QoLPlugin.Log.LogError("Adding port Bank tab failed: " + e); }
+        }
+    }
+
+    [HarmonyPatch(typeof(NavigationProvider), "Dock")]
+    public static class NativeBankDockPatch
+    {
+        private static void Postfix(Sunless.Game.Entities.Geography.PortDatum port)
+        {
+            QoLPlugin.SetNativeBankTabVisibleForPort(port);
+        }
+    }
+
+    [HarmonyPatch(typeof(NavigationProvider), "Undock")]
+    public static class NativeBankUndockPatch
+    {
+        private static void Prefix()
+        {
+            QoLPlugin.HideNativeBankTab();
         }
     }
 
@@ -1461,12 +1535,12 @@ namespace SunlessQoL
         }
     }
 
-    [HarmonyPatch(typeof(MoveBoat), "set_EngineTemperature")]
-    public static class EngineHeatActualPatch
+    [HarmonyPatch(typeof(MoveBoat), "set_PeculiarNoises")]
+    public static class PeculiarNoisesPatch
     {
-        private static void Prefix(ref float value)
+        private static void Prefix(ref int value)
         {
-            if (QoLPlugin.DisableExplosions) value = 0f;
+            if (QoLPlugin.DisableExplosions) value = 0;
         }
     }
 
@@ -1505,6 +1579,7 @@ namespace SunlessQoL
             int? failure = TerrorDelta(branch.DefaultEvent, character);
             int? rareSuccess = TerrorDelta(branch.RareSuccessEvent, character);
             int? rareFailure = TerrorDelta(branch.RareDefaultEvent, character);
+            int? combined = null;
 
             string result = "";
             if (success.HasValue && failure.HasValue && success.Value != failure.Value)
@@ -1518,22 +1593,46 @@ namespace SunlessQoL
                 result += (result.Length == 0 ? "Terror: " : " / ") + "rare success " + Signed(rareSuccess.Value);
             if (rareFailure.HasValue)
                 result += (result.Length == 0 ? "Terror: " : " / ") + "rare failure " + Signed(rareFailure.Value);
+            if (result.Length == 0 && branch.ResultEvents != null)
+            {
+                foreach (FailBetter.Core.Event ev in branch.ResultEvents)
+                {
+                    int? delta = TerrorDelta(ev, character);
+                    if (!delta.HasValue) continue;
+                    if (!combined.HasValue) combined = delta.Value;
+                    else combined = combined.Value + delta.Value;
+                }
+                if (combined.HasValue) result = "Terror: " + Signed(combined.Value);
+            }
             return result;
         }
 
         private static int? TerrorDelta(FailBetter.Core.Event ev, Character character)
         {
-            if (ev == null || ev.QualitiesAffected == null) return null;
+            if (ev == null) return null;
             int total = 0;
             bool found = false;
-            foreach (FailBetter.Core.QAssoc.EventQEffect effect in ev.QualitiesAffected)
+            if (ev.QualitiesAffected != null)
             {
-                if (effect == null || effect.AssociatedQuality == null) continue;
-                if (effect.AssociatedQuality.Id != WellKnownQualityProvider.Terror.Id) continue;
-                if (!EffectApplies(effect, character)) continue;
-                int delta = EffectDelta(effect, character);
-                total += delta;
-                found = true;
+                foreach (FailBetter.Core.QAssoc.EventQEffect effect in ev.QualitiesAffected)
+                {
+                    if (effect == null) continue;
+                    int qualityId = effect.AssociatedQuality != null ? effect.AssociatedQuality.Id : effect.AssociatedQualityId;
+                    if (qualityId != WellKnownQualityProvider.Terror.Id) continue;
+                    if (!EffectApplies(effect, character)) continue;
+                    int delta = EffectDelta(effect, character);
+                    total += delta;
+                    found = true;
+                }
+            }
+            if (ev.LinkToEvent != null)
+            {
+                int? linked = TerrorDelta(ev.LinkToEvent, character);
+                if (linked.HasValue)
+                {
+                    total += linked.Value;
+                    found = true;
+                }
             }
             if (!found || total == 0) return null;
             return total;
