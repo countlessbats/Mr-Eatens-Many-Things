@@ -14,7 +14,7 @@ using Sunless.Game.UI.Menus;
 
 namespace SunlessQoL
 {
-    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.17.4")]
+    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.17.5")]
     public class QoLPlugin : BaseUnityPlugin
     {
         public const string GUID = "uptoh.sunless.manythings";
@@ -114,21 +114,26 @@ namespace SunlessQoL
             _sayKey = Config.Bind("ZeeLaw", "SomethingAwaitsYouKey", KeyCode.F9,
                 "Tap to grant Something Awaits You.");
 
+            Harmony h = new Harmony(GUID);
+            PatchOne(h, typeof(MainMenuPatch));
+            PatchOne(h, typeof(HullDamagePatch));
+            PatchOne(h, typeof(EngineHeatPatch));
+            PatchOne(h, typeof(EngineRecalculateHeatPatch));
+            PatchOne(h, typeof(TerrorPreviewPatch));
+            PatchOne(h, typeof(GazetteerBankTabPatch));
+            Logger.LogInfo("Mr Eaten's Many Things loaded; patch registration finished.");
+        }
+
+        private void PatchOne(Harmony h, Type patchType)
+        {
             try
             {
-                Harmony h = new Harmony(GUID);
-                h.PatchAll(typeof(MainMenuPatch));
-                h.PatchAll(typeof(HullDamagePatch));
-                h.PatchAll(typeof(EngineHeatPatch));
-                h.PatchAll(typeof(EngineTargetHeatPatch));
-                h.PatchAll(typeof(EngineRecalculateHeatPatch));
-                h.PatchAll(typeof(TerrorPreviewPatch));
-                h.PatchAll(typeof(GazetteerBankTabPatch));
-                Logger.LogInfo("Mr Eaten's Many Things loaded; ESC-menu + hull-damage + engine-heat + terror-preview + port-Bank-tab patched.");
+                h.PatchAll(patchType);
+                Logger.LogInfo("Patched " + patchType.Name + ".");
             }
             catch (Exception e)
             {
-                Logger.LogError("Failed to apply Harmony patch: " + e);
+                Logger.LogError("Failed to apply " + patchType.Name + ": " + e);
             }
         }
 
@@ -1492,15 +1497,6 @@ namespace SunlessQoL
         }
     }
 
-    [HarmonyPatch(typeof(MoveBoat), "set_TargetEngineTemperature")]
-    public static class EngineTargetHeatPatch
-    {
-        private static void Prefix(ref float value)
-        {
-            value = QoLPlugin.CapEngineHeat(value);
-        }
-    }
-
     [HarmonyPatch(typeof(NavigationProvider), "RecalculateEngineTempurature")]
     public static class EngineRecalculateHeatPatch
     {
@@ -1509,7 +1505,6 @@ namespace SunlessQoL
             try
             {
                 if (!QoLPlugin.DisableExplosions || __instance == null || __instance.Boat == null) return;
-                __instance.Boat.TargetEngineTemperature = QoLPlugin.CapEngineHeat(__instance.Boat.TargetEngineTemperature);
                 __instance.Boat.EngineTemperature = QoLPlugin.CapEngineHeat(__instance.Boat.EngineTemperature);
                 __instance.Boat.PeculiarNoises = 0;
             }
@@ -1526,12 +1521,12 @@ namespace SunlessQoL
     {
         private static System.Reflection.FieldInfo _descriptionField;
 
-        private static void Postfix(Sunless.Game.UI.Storylet.BranchPanel __instance, Branch theBranch, Sunless.Game.Entities.SunlessCharacter character)
+        private static void Postfix(Sunless.Game.UI.Storylet.BranchPanel __instance, Branch branch, Sunless.Game.Entities.SunlessCharacter character)
         {
             try
             {
-                if (!QoLPlugin.PreviewTerror || __instance == null || theBranch == null || character == null) return;
-                string preview = TerrorPreviewFor(theBranch, character);
+                if (!QoLPlugin.PreviewTerror || __instance == null || branch == null || character == null) return;
+                string preview = TerrorPreviewFor(branch, character);
                 if (string.IsNullOrEmpty(preview)) return;
 
                 if (_descriptionField == null)
