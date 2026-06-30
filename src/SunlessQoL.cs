@@ -16,7 +16,7 @@ namespace SunlessQoL
 {
     public enum Rate { Full, Half, Quarter, None }
 
-    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.15.5")]
+    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.16.0")]
     public class QoLPlugin : BaseUnityPlugin
     {
         public const string GUID = "uptoh.sunless.manythings";
@@ -26,11 +26,14 @@ namespace SunlessQoL
 
         // ---- config (persisted to BepInEx/config) ----
         private ConfigEntry<Rate> _terror, _hunger, _fuel, _damage;
+        private ConfigEntry<bool> _disableExplosions, _previewTerror;
         private ConfigEntry<float> _accel;
         private ConfigEntry<KeyCode> _toggleKey, _holdKey;
 
         // Read by the static set_Hull patch; updated each frame.
         internal static float DamageMult = 1f;
+        internal static bool DisableExplosions;
+        internal static bool PreviewTerror;
 
         // ---- captured vanilla nav-constant defaults (grabbed once) ----
         private bool _captured;
@@ -105,6 +108,10 @@ namespace SunlessQoL
                 "How fast Fuel is burned while sailing. None = no fuel use.");
             _damage = Config.Bind("Rates", "DamageFactor", Rate.Full,
                 "Multiplier on all damage your ship's Hull takes. None = invulnerable.");
+            _disableExplosions = Config.Bind("ZeeLaw", "DisableExplosions", false,
+                "When true, engine heat is clamped to zero so boosting cannot overheat or explode.");
+            _previewTerror = Config.Bind("ZeeLaw", "PreviewTerror", false,
+                "When true, Terror storylet preview icons show the exact amount.");
             _accel = Config.Bind("TimeAcceleration", "Factor", 3f,
                 new ConfigDescription("Time acceleration multiplier.",
                     new AcceptableValueRange<float>(1f, 10f)));
@@ -118,8 +125,11 @@ namespace SunlessQoL
                 Harmony h = new Harmony(GUID);
                 h.PatchAll(typeof(MainMenuPatch));
                 h.PatchAll(typeof(HullDamagePatch));
+                h.PatchAll(typeof(EngineHeatTargetPatch));
+                h.PatchAll(typeof(EngineHeatActualPatch));
+                h.PatchAll(typeof(TerrorPreviewPatch));
                 h.PatchAll(typeof(GazetteerBankTabPatch));
-                Logger.LogInfo("Mr Eaten's Many Things loaded; ESC-menu + hull-damage + port-Bank-tab patched.");
+                Logger.LogInfo("Mr Eaten's Many Things loaded; ESC-menu + hull-damage + engine-heat + terror-preview + port-Bank-tab patched.");
             }
             catch (Exception e)
             {
@@ -362,6 +372,8 @@ namespace SunlessQoL
         private void Update()
         {
             DamageMult = Mult(_damage.Value);
+            DisableExplosions = _disableExplosions != null && _disableExplosions.Value;
+            PreviewTerror = _previewTerror != null && _previewTerror.Value;
             try { ApplyRateConstants(); }
             catch (Exception e) { Log.LogError("ApplyRateConstants threw: " + e); }
             try { HandleKeys(); }
@@ -541,6 +553,11 @@ namespace SunlessQoL
             RateRow("FUEL CONSUMPTION", _fuel);
             GUILayout.Space(8f);
             RateRow("DAMAGE FACTOR", _damage);
+
+            GUILayout.Space(12f);
+            GUILayout.Label("ZEE LAW TOGGLES", _header);
+            _disableExplosions.Value = GUILayout.Toggle(_disableExplosions.Value, "Disable Explosions");
+            _previewTerror.Value = GUILayout.Toggle(_previewTerror.Value, "Preview Terror");
 
             GUILayout.Space(12f);
             GUILayout.Label("TIME ACCELERATION", _header);
@@ -1401,6 +1418,52 @@ namespace SunlessQoL
             catch (Exception e)
             {
                 QoLPlugin.Log.LogError("Hull damage scaling failed: " + e);
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(MoveBoat), "set_TargetEngineTemperature")]
+    public static class EngineHeatTargetPatch
+    {
+        private static void Prefix(ref float value)
+        {
+            if (QoLPlugin.DisableExplosions) value = 0f;
+        }
+    }
+
+    [HarmonyPatch(typeof(MoveBoat), "set_EngineTemperature")]
+    public static class EngineHeatActualPatch
+    {
+        private static void Prefix(ref float value)
+        {
+            if (QoLPlugin.DisableExplosions) value = 0f;
+        }
+    }
+
+    [HarmonyPatch(typeof(Sunless.Game.UI.Icons.StatusIconPreview), "Format")]
+    public static class TerrorPreviewPatch
+    {
+        private static System.Reflection.MethodInfo _setLevelNumber;
+
+        private static void Postfix(Sunless.Game.UI.Icons.StatusIconPreview __instance)
+        {
+            try
+            {
+                if (!QoLPlugin.PreviewTerror || __instance == null || __instance.QAssoc == null) return;
+                Quality q = __instance.QAssoc.AssociatedQuality;
+                if (q == null || q.Id != WellKnownQualityProvider.Terror.Id) return;
+                int n = __instance.QAssoc.Level;
+                if (n == 0) return;
+                if (_setLevelNumber == null)
+                    _setLevelNumber = __instance.GetType().BaseType.GetMethod("SetLevelNumber",
+                        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic |
+                        System.Reflection.BindingFlags.Public);
+                if (_setLevelNumber != null)
+                    _setLevelNumber.Invoke(__instance, new object[] { n, true });
+            }
+            catch (Exception e)
+            {
+                QoLPlugin.Log.LogError("Terror preview failed: " + e);
             }
         }
     }
