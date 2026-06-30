@@ -14,7 +14,7 @@ using Sunless.Game.UI.Menus;
 
 namespace SunlessQoL
 {
-    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.17.3")]
+    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.17.4")]
     public class QoLPlugin : BaseUnityPlugin
     {
         public const string GUID = "uptoh.sunless.manythings";
@@ -32,9 +32,7 @@ namespace SunlessQoL
         internal static float DamageMult = 1f;
         internal static bool DisableExplosions;
         internal static bool PreviewTerror;
-        private const int FallenLondonAreaId = 100321;
-        private static Sunless.Game.UI.Gazetteer.Tab _nativeBankTab;
-        private static System.Reflection.FieldInfo _tabButtonField;
+        private const float EngineHeatCap = 10f;
 
         // ---- captured vanilla nav-constant defaults (grabbed once) ----
         private bool _captured;
@@ -103,7 +101,7 @@ namespace SunlessQoL
                 new ConfigDescription("Multiplier for incoming Hull damage.",
                     new AcceptableValueRange<float>(0f, 2f)));
             _disableExplosions = Config.Bind("ZeeLaw", "DisableExplosions", false,
-                "When true, engine boost still works, but engine heat cannot build up.");
+                "When true, engine boost still works, but engine heat is capped low enough to prevent fires and explosions.");
             _previewTerror = Config.Bind("ZeeLaw", "PreviewTerror", false,
                 "When true, Terror storylet preview icons show the exact amount.");
             _accel = Config.Bind("TimeAcceleration", "Factor", 3f,
@@ -126,10 +124,7 @@ namespace SunlessQoL
                 h.PatchAll(typeof(EngineRecalculateHeatPatch));
                 h.PatchAll(typeof(TerrorPreviewPatch));
                 h.PatchAll(typeof(GazetteerBankTabPatch));
-                h.PatchAll(typeof(NativeBankDockPatch));
-                h.PatchAll(typeof(NativeBankUndockPatch));
-                h.PatchAll(typeof(NativeBankOpenPatch));
-                Logger.LogInfo("Mr Eaten's Many Things loaded; ESC-menu + hull-damage + engine-heat + terror-preview + London-Bank-tab patched.");
+                Logger.LogInfo("Mr Eaten's Many Things loaded; ESC-menu + hull-damage + engine-heat + terror-preview + port-Bank-tab patched.");
             }
             catch (Exception e)
             {
@@ -149,67 +144,10 @@ namespace SunlessQoL
             if (Instance != null) Instance.RenderBank();
         }
 
-        internal static void RegisterNativeBankTab(Sunless.Game.UI.Gazetteer.Tab tab)
+        internal static float CapEngineHeat(float value)
         {
-            _nativeBankTab = tab;
-            SetNativeBankTabVisible(IsCurrentPortLondon());
-        }
-
-        internal static void SetNativeBankTabVisibleForPort(Sunless.Game.Entities.Geography.PortDatum port)
-        {
-            SetNativeBankTabVisible(IsLondonPort(port));
-        }
-
-        internal static void HideNativeBankTab()
-        {
-            SetNativeBankTabVisible(false);
-        }
-
-        internal static void RefreshNativeBankTab()
-        {
-            SetNativeBankTabVisible(IsCurrentPortLondon());
-        }
-
-        private static bool IsCurrentPortLondon()
-        {
-            try
-            {
-                GameProvider gp = GameProvider.Instance;
-                if (gp == null || gp.CurrentCharacter == null) return false;
-                if (IsLondonPort(gp.CurrentCharacter.CurrentPort)) return true;
-                FailBetter.Core.Area area = gp.CurrentCharacter.CurrentArea;
-                if (area != null && area.Id == FallenLondonAreaId) return true;
-                if (area != null && !string.IsNullOrEmpty(area.Name) &&
-                    area.Name.IndexOf("London", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-                return false;
-            }
-            catch { return false; }
-        }
-
-        private static bool IsLondonPort(Sunless.Game.Entities.Geography.PortDatum port)
-        {
-            if (port == null) return false;
-            if (port.IsStartingPort) return true;
-            if (port.Area != null && port.Area.Id == FallenLondonAreaId) return true;
-            if (port.Area != null && !string.IsNullOrEmpty(port.Area.Name) &&
-                port.Area.Name.IndexOf("London", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-            return string.Equals(port.Name, "Fallen London", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static void SetNativeBankTabVisible(bool visible)
-        {
-            try
-            {
-                if (_nativeBankTab == null) return;
-                _nativeBankTab.SetActiveState(visible);
-                if (_tabButtonField == null)
-                    _tabButtonField = typeof(Sunless.Game.UI.Gazetteer.Tab).GetField("_theButton",
-                        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-                if (_tabButtonField == null) return;
-                UnityEngine.UI.Button b = _tabButtonField.GetValue(_nativeBankTab) as UnityEngine.UI.Button;
-                if (b != null && b.gameObject != null) b.gameObject.SetActive(visible);
-            }
-            catch (Exception e) { Log.LogError("Native Bank tab visibility failed: " + e); }
+            if (!DisableExplosions) return value;
+            return value > EngineHeatCap ? EngineHeatCap : value;
         }
 
         // Renders the bank natively into the Gazetteer's two book pages as grids of
@@ -1508,35 +1446,8 @@ namespace SunlessQoL
     {
         private static void Postfix(Sunless.Game.UI.Gazetteer.Gazetteer __instance)
         {
-            try { QoLPlugin.RegisterNativeBankTab(__instance.AddTab("Bank", new Action(QoLPlugin.RenderBankFromTab), false)); }
+            try { __instance.AddTab("Bank", new Action(QoLPlugin.RenderBankFromTab), false); }
             catch (Exception e) { QoLPlugin.Log.LogError("Adding port Bank tab failed: " + e); }
-        }
-    }
-
-    [HarmonyPatch(typeof(NavigationProvider), "Dock")]
-    public static class NativeBankDockPatch
-    {
-        private static void Postfix(Sunless.Game.Entities.Geography.PortDatum port)
-        {
-            QoLPlugin.SetNativeBankTabVisibleForPort(port);
-        }
-    }
-
-    [HarmonyPatch(typeof(NavigationProvider), "Undock")]
-    public static class NativeBankUndockPatch
-    {
-        private static void Prefix()
-        {
-            QoLPlugin.HideNativeBankTab();
-        }
-    }
-
-    [HarmonyPatch(typeof(Sunless.Game.UI.Gazetteer.Gazetteer), "Open")]
-    public static class NativeBankOpenPatch
-    {
-        private static void Postfix()
-        {
-            QoLPlugin.RefreshNativeBankTab();
         }
     }
 
@@ -1577,7 +1488,7 @@ namespace SunlessQoL
     {
         private static void Prefix(ref float value)
         {
-            if (QoLPlugin.DisableExplosions) value = 0f;
+            value = QoLPlugin.CapEngineHeat(value);
         }
     }
 
@@ -1586,7 +1497,7 @@ namespace SunlessQoL
     {
         private static void Prefix(ref float value)
         {
-            if (QoLPlugin.DisableExplosions) value = 0f;
+            value = QoLPlugin.CapEngineHeat(value);
         }
     }
 
@@ -1598,8 +1509,8 @@ namespace SunlessQoL
             try
             {
                 if (!QoLPlugin.DisableExplosions || __instance == null || __instance.Boat == null) return;
-                __instance.Boat.TargetEngineTemperature = 0f;
-                __instance.Boat.EngineTemperature = 0f;
+                __instance.Boat.TargetEngineTemperature = QoLPlugin.CapEngineHeat(__instance.Boat.TargetEngineTemperature);
+                __instance.Boat.EngineTemperature = QoLPlugin.CapEngineHeat(__instance.Boat.EngineTemperature);
                 __instance.Boat.PeculiarNoises = 0;
             }
             catch (Exception e)
