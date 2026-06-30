@@ -14,7 +14,7 @@ using Sunless.Game.UI.Menus;
 
 namespace SunlessQoL
 {
-    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.17.5")]
+    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.17.6")]
     public class QoLPlugin : BaseUnityPlugin
     {
         public const string GUID = "uptoh.sunless.manythings";
@@ -1449,10 +1449,38 @@ namespace SunlessQoL
     [HarmonyPatch(typeof(Sunless.Game.UI.Gazetteer.Gazetteer), MethodType.Constructor, new Type[] { typeof(GameObject) })]
     public static class GazetteerBankTabPatch
     {
+        private static System.Reflection.FieldInfo _echoesLabelField;
+
         private static void Postfix(Sunless.Game.UI.Gazetteer.Gazetteer __instance)
         {
-            try { __instance.AddTab("Bank", new Action(QoLPlugin.RenderBankFromTab), false); }
+            try
+            {
+                __instance.AddTab("Bank", new Action(QoLPlugin.RenderBankFromTab), false);
+                MoveEchoesDisplayRight(__instance);
+            }
             catch (Exception e) { QoLPlugin.Log.LogError("Adding port Bank tab failed: " + e); }
+        }
+
+        private static void MoveEchoesDisplayRight(Sunless.Game.UI.Gazetteer.Gazetteer gaz)
+        {
+            try
+            {
+                if (gaz == null) return;
+                if (_echoesLabelField == null)
+                    _echoesLabelField = typeof(Sunless.Game.UI.Gazetteer.Gazetteer).GetField("_echoesLabel",
+                        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+                if (_echoesLabelField == null) return;
+
+                UnityEngine.UI.Text label = _echoesLabelField.GetValue(gaz) as UnityEngine.UI.Text;
+                if (label == null) return;
+                UnityEngine.UI.Button button = label.GetComponentInParent<UnityEngine.UI.Button>();
+                RectTransform rt = button != null
+                    ? button.gameObject.GetComponent<RectTransform>()
+                    : label.gameObject.GetComponent<RectTransform>();
+                if (rt == null) return;
+                rt.anchoredPosition = new Vector2(rt.anchoredPosition.x + 90f, rt.anchoredPosition.y);
+            }
+            catch (Exception e) { QoLPlugin.Log.LogError("Moving Echoes display failed: " + e); }
         }
     }
 
