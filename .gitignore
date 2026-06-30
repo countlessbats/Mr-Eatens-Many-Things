@@ -1,0 +1,11 @@
+dist/
+release/
+*.dll
+*.pdb
+*.mdb
+*.zip
+BepInEx/
+winhttp.dll
+doorstop_config.ini
+*.user
+*.suo
