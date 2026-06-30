@@ -14,9 +14,7 @@ using Sunless.Game.UI.Menus;
 
 namespace SunlessQoL
 {
-    public enum Rate { Full, Half, Quarter, None }
-
-    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.16.1")]
+    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.17.0")]
     public class QoLPlugin : BaseUnityPlugin
     {
         public const string GUID = "uptoh.sunless.manythings";
@@ -25,7 +23,7 @@ namespace SunlessQoL
         internal static ManualLogSource Log;
 
         // ---- config (persisted to BepInEx/config) ----
-        private ConfigEntry<Rate> _terror, _hunger, _fuel, _damage;
+        private ConfigEntry<float> _terror, _hunger, _fuel, _damage;
         private ConfigEntry<bool> _disableExplosions, _previewTerror;
         private ConfigEntry<float> _accel;
         private ConfigEntry<KeyCode> _toggleKey, _holdKey, _sayKey;
@@ -84,30 +82,23 @@ namespace SunlessQoL
         private static System.Collections.Generic.Dictionary<string, System.Collections.Generic.Dictionary<int, int>> _bank;
         private Vector2 _holdScroll, _bankScroll;
 
-        private static float Mult(Rate r)
-        {
-            switch (r)
-            {
-                case Rate.Full: return 1f;
-                case Rate.Half: return 0.5f;
-                case Rate.Quarter: return 0.25f;
-                default: return 0f;
-            }
-        }
-
         private void Awake()
         {
             Instance = this;
             Log = Logger;
 
-            _terror = Config.Bind("Rates", "TerrorGain", Rate.Full,
-                "How fast Terror builds from sailing in the dark. None = frozen.");
-            _hunger = Config.Bind("Rates", "HungerGain", Rate.Full,
-                "How fast crew Hunger rises. None = frozen.");
-            _fuel = Config.Bind("Rates", "FuelConsumption", Rate.Full,
-                "How fast Fuel is burned while sailing. None = no fuel use.");
-            _damage = Config.Bind("Rates", "DamageFactor", Rate.Full,
-                "Multiplier on all damage your ship's Hull takes. None = invulnerable.");
+            _terror = Config.Bind("Rates", "TerrorGainMultiplier", 1f,
+                new ConfigDescription("Multiplier for Terror gain while sailing.",
+                    new AcceptableValueRange<float>(0f, 2f)));
+            _hunger = Config.Bind("Rates", "HungerGainMultiplier", 1f,
+                new ConfigDescription("Multiplier for Hunger gain.",
+                    new AcceptableValueRange<float>(0f, 2f)));
+            _fuel = Config.Bind("Rates", "FuelConsumptionMultiplier", 1f,
+                new ConfigDescription("Multiplier for Fuel consumption.",
+                    new AcceptableValueRange<float>(0f, 2f)));
+            _damage = Config.Bind("Rates", "DamageMultiplier", 1f,
+                new ConfigDescription("Multiplier for incoming Hull damage.",
+                    new AcceptableValueRange<float>(0f, 2f)));
             _disableExplosions = Config.Bind("ZeeLaw", "DisableExplosions", false,
                 "When true, engine heat is clamped to zero so boosting cannot overheat or explode.");
             _previewTerror = Config.Bind("ZeeLaw", "PreviewTerror", false,
@@ -372,7 +363,7 @@ namespace SunlessQoL
 
         private void Update()
         {
-            DamageMult = Mult(_damage.Value);
+            DamageMult = _damage.Value;
             DisableExplosions = _disableExplosions != null && _disableExplosions.Value;
             PreviewTerror = _previewTerror != null && _previewTerror.Value;
             try { ApplyRateConstants(); }
@@ -439,9 +430,9 @@ namespace SunlessQoL
                     " lightFuel=" + _baseLightFuel);
             }
 
-            nav.BaseHungerIncrease = _baseHunger * Mult(_hunger.Value);
-            nav.BaseGloomIncrease = _baseGloom * Mult(_terror.Value);
-            float fm = Mult(_fuel.Value);
+            nav.BaseHungerIncrease = _baseHunger * _hunger.Value;
+            nav.BaseGloomIncrease = _baseGloom * _terror.Value;
+            float fm = _fuel.Value;
             nav.EngineFuelDecrementUnit = _baseEngineFuel * fm;
             nav.LightFuelDecrementUnit = _baseLightFuel * fm;
         }
@@ -517,27 +508,40 @@ namespace SunlessQoL
             _rect = GUILayout.Window(0x4D52454E, _rect, DrawWindow, "Mr Eaten's Many Things");
         }
 
-        private void RateRow(string label, ConfigEntry<Rate> entry)
+        private void RateRow(string label, ConfigEntry<float> entry)
         {
-            GUILayout.Label(label, _header);
             GUILayout.BeginHorizontal();
-            RateButton(entry, Rate.Full, "Full");
-            RateButton(entry, Rate.Half, "Half");
-            RateButton(entry, Rate.Quarter, "Quarter");
-            RateButton(entry, Rate.None, "None");
+            GUILayout.Label(label, GUILayout.Width(135f));
+
+            Rect r = GUILayoutUtility.GetRect(190f, 18f, GUILayout.Width(190f));
+            DrawPerilScale(r);
+            float raw = GUI.HorizontalSlider(r, entry.Value, 0f, 2f);
+            float val = Mathf.Round(raw * 20f) / 20f;
+            if (Mathf.Abs(val - 1f) < 0.025f) val = 1f;
+            entry.Value = val;
+
+            GUIStyle valueStyle = GUI.skin.label;
+            Color prev = GUI.color;
+            if (entry.Value < 1f) GUI.color = new Color(0.55f, 1f, 0.55f);
+            else if (entry.Value > 1f) GUI.color = new Color(1f, 0.58f, 0.58f);
+            else GUI.color = Color.white;
+            GUILayout.Label("x" + entry.Value.ToString("0.00"), valueStyle, GUILayout.Width(48f));
+            GUI.color = prev;
             GUILayout.EndHorizontal();
         }
 
-        private void RateButton(ConfigEntry<Rate> entry, Rate option, string text)
+        private void DrawPerilScale(Rect r)
         {
-            Color prev = GUI.backgroundColor;
-            if (entry.Value == option) GUI.backgroundColor = Color.green;
-            if (GUILayout.Button(text))
-            {
-                entry.Value = option;
-                _status = entry.Definition.Key + " -> " + option + ".";
-            }
-            GUI.backgroundColor = prev;
+            if (UnityEngine.Event.current.type != EventType.Repaint) return;
+            Rect bar = new Rect(r.x, r.y + 6f, r.width, 6f);
+            Color prev = GUI.color;
+            GUI.color = new Color(0.1f, 0.6f, 0.1f, 0.32f);
+            GUI.DrawTexture(new Rect(bar.x, bar.y, bar.width * 0.5f, bar.height), Texture2D.whiteTexture);
+            GUI.color = new Color(0.75f, 0.1f, 0.1f, 0.32f);
+            GUI.DrawTexture(new Rect(bar.x + bar.width * 0.5f, bar.y, bar.width * 0.5f, bar.height), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            GUI.DrawTexture(new Rect(bar.x + bar.width * 0.5f - 1f, bar.y - 3f, 2f, bar.height + 6f), Texture2D.whiteTexture);
+            GUI.color = prev;
         }
 
         private void DrawWindow(int id)

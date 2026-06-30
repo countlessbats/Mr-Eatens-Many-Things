@@ -14,10 +14,10 @@ This is a BepInEx 5 plugin for Sunless Sea. The main download is a drop-in packa
 
 **Zee Law**
 
-- Change Terror gain while sailing.
-- Change Hunger gain.
-- Change Fuel consumption.
-- Change incoming Hull damage.
+- Change Terror gain while sailing from 0.0x to 2.0x, with 1.0x as the centered default.
+- Change Hunger gain from 0.0x to 2.0x.
+- Change Fuel consumption from 0.0x to 2.0x.
+- Change incoming Hull damage from 0.0x to 2.0x.
 - Disable engine heat/explosions.
 - Preview exact Terror gains on storylet branch descriptions.
 - Grant Something Awaits You with a configurable hotkey.

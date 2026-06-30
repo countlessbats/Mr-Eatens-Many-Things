@@ -4,7 +4,7 @@ Cheat and quality-of-life mod for **Sunless Sea**.
 
 Author: countlessbats
 
-Current version: **2.16.1**
+Current version: **2.17.0**
 
 ## What It Does
 
@@ -13,10 +13,10 @@ Mr Eaten's Many Things adds an in-game ESC-menu panel with tabs for changing com
 Features:
 
 - **Zee Law**
-  - Adjust Terror gain while sailing.
-  - Adjust Hunger gain.
-  - Adjust Fuel consumption.
-  - Adjust incoming Hull damage.
+  - Adjust Terror gain while sailing from `0.0x` to `2.0x`, with `1.0x` as the centered default.
+  - Adjust Hunger gain from `0.0x` to `2.0x`.
+  - Adjust Fuel consumption from `0.0x` to `2.0x`.
+  - Adjust incoming Hull damage from `0.0x` to `2.0x`.
   - Disable engine heat/explosions.
   - Preview exact Terror gains on storylet branch descriptions.
   - Grant Something Awaits You with a configurable hotkey.
