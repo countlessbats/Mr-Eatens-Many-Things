@@ -19,7 +19,8 @@ This is a BepInEx 5 plugin for Sunless Sea. The main download is a drop-in packa
 - Change Fuel consumption.
 - Change incoming Hull damage.
 - Disable engine heat/explosions.
-- Preview exact Terror gains on storylet warning icons.
+- Preview exact Terror gains on storylet branch descriptions.
+- Grant Something Awaits You with a configurable hotkey.
 - Time acceleration with configurable toggle and hold keys.
 
 **7 Numbers**

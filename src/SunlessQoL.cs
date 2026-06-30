@@ -16,7 +16,7 @@ namespace SunlessQoL
 {
     public enum Rate { Full, Half, Quarter, None }
 
-    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.16.0")]
+    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.16.1")]
     public class QoLPlugin : BaseUnityPlugin
     {
         public const string GUID = "uptoh.sunless.manythings";
@@ -28,7 +28,7 @@ namespace SunlessQoL
         private ConfigEntry<Rate> _terror, _hunger, _fuel, _damage;
         private ConfigEntry<bool> _disableExplosions, _previewTerror;
         private ConfigEntry<float> _accel;
-        private ConfigEntry<KeyCode> _toggleKey, _holdKey;
+        private ConfigEntry<KeyCode> _toggleKey, _holdKey, _sayKey;
 
         // Read by the static set_Hull patch; updated each frame.
         internal static float DamageMult = 1f;
@@ -44,7 +44,7 @@ namespace SunlessQoL
         private bool _accelerating;    // toggle OR hold, computed each frame
         private bool _appliedScale;    // whether we currently own Time.timeScale
 
-        private enum Rebind { None, Toggle, Hold }
+        private enum Rebind { None, Toggle, Hold, Say }
         private Rebind _rebind = Rebind.None;
 
         // ---- ui ----
@@ -119,13 +119,14 @@ namespace SunlessQoL
                 "Tap to switch time acceleration on/off.");
             _holdKey = Config.Bind("TimeAcceleration", "HoldKey", KeyCode.F11,
                 "Hold to accelerate; release to return to normal.");
+            _sayKey = Config.Bind("ZeeLaw", "SomethingAwaitsYouKey", KeyCode.F9,
+                "Tap to grant Something Awaits You.");
 
             try
             {
                 Harmony h = new Harmony(GUID);
                 h.PatchAll(typeof(MainMenuPatch));
                 h.PatchAll(typeof(HullDamagePatch));
-                h.PatchAll(typeof(EngineHeatTargetPatch));
                 h.PatchAll(typeof(EngineHeatActualPatch));
                 h.PatchAll(typeof(TerrorPreviewPatch));
                 h.PatchAll(typeof(GazetteerBankTabPatch));
@@ -462,8 +463,9 @@ namespace SunlessQoL
                     if (Input.GetKeyDown(kc))
                     {
                         if (_rebind == Rebind.Toggle) _toggleKey.Value = kc;
-                        else _holdKey.Value = kc;
-                        _status = "Bound " + (_rebind == Rebind.Toggle ? "Toggle" : "Hold") + " to " + kc + ".";
+                        else if (_rebind == Rebind.Hold) _holdKey.Value = kc;
+                        else _sayKey.Value = kc;
+                        _status = "Bound " + (_rebind == Rebind.Toggle ? "Toggle" : (_rebind == Rebind.Hold ? "Hold" : "SAY")) + " to " + kc + ".";
                         _rebind = Rebind.None;
                         break;
                     }
@@ -474,8 +476,33 @@ namespace SunlessQoL
             if (_toggleKey.Value != KeyCode.None && Input.GetKeyDown(_toggleKey.Value))
                 _toggledOn = !_toggledOn;
 
+            if (_sayKey.Value != KeyCode.None && Input.GetKeyDown(_sayKey.Value))
+                GrantSomethingAwaitsYou();
+
             bool hold = _holdKey.Value != KeyCode.None && Input.GetKey(_holdKey.Value);
             _accelerating = _toggledOn || hold;
+        }
+
+        private void GrantSomethingAwaitsYou()
+        {
+            try
+            {
+                GameProvider gp = GameProvider.Instance;
+                if (gp == null || gp.CurrentCharacter == null) return;
+                gp.CurrentCharacter.AcquireQualityAtExplicitLevel(WellKnownQualityProvider.SomethingAwaitsYou, 1);
+                NavigationProvider nav = NavigationProvider.Instance;
+                if (nav != null)
+                {
+                    if (nav.Boat != null) nav.Boat.SomethingAwaitsYou = 1;
+                    nav.ShowHideSAYIcon(true);
+                }
+                _status = "Something Awaits You.";
+            }
+            catch (Exception e)
+            {
+                _status = "SAY failed: " + e.Message;
+                Log.LogError(e);
+            }
         }
 
         private void OnGUI()
@@ -558,6 +585,14 @@ namespace SunlessQoL
             GUILayout.Label("ZEE LAW TOGGLES", _header);
             _disableExplosions.Value = GUILayout.Toggle(_disableExplosions.Value, "Disable Explosions");
             _previewTerror.Value = GUILayout.Toggle(_previewTerror.Value, "Preview Terror");
+
+            GUILayout.Space(12f);
+            GUILayout.Label("SOMETHING AWAITS YOU", _header);
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Grant key", GUILayout.Width(90f));
+            if (GUILayout.Button(_rebind == Rebind.Say ? "<press a key>" : _sayKey.Value.ToString()))
+                _rebind = Rebind.Say;
+            GUILayout.EndHorizontal();
 
             GUILayout.Space(12f);
             GUILayout.Label("TIME ACCELERATION", _header);
@@ -1422,15 +1457,6 @@ namespace SunlessQoL
         }
     }
 
-    [HarmonyPatch(typeof(MoveBoat), "set_TargetEngineTemperature")]
-    public static class EngineHeatTargetPatch
-    {
-        private static void Prefix(ref float value)
-        {
-            if (QoLPlugin.DisableExplosions) value = 0f;
-        }
-    }
-
     [HarmonyPatch(typeof(MoveBoat), "set_EngineTemperature")]
     public static class EngineHeatActualPatch
     {
@@ -1440,31 +1466,99 @@ namespace SunlessQoL
         }
     }
 
-    [HarmonyPatch(typeof(Sunless.Game.UI.Icons.StatusIconPreview), "Format")]
+    [HarmonyPatch(typeof(Sunless.Game.UI.Storylet.BranchPanel), MethodType.Constructor,
+        new Type[] { typeof(GameObject), typeof(Branch), typeof(Sunless.Game.Entities.SunlessCharacter) })]
     public static class TerrorPreviewPatch
     {
-        private static System.Reflection.MethodInfo _setLevelNumber;
+        private static System.Reflection.FieldInfo _descriptionField;
 
-        private static void Postfix(Sunless.Game.UI.Icons.StatusIconPreview __instance)
+        private static void Postfix(Sunless.Game.UI.Storylet.BranchPanel __instance, Branch theBranch, Sunless.Game.Entities.SunlessCharacter character)
         {
             try
             {
-                if (!QoLPlugin.PreviewTerror || __instance == null || __instance.QAssoc == null) return;
-                Quality q = __instance.QAssoc.AssociatedQuality;
-                if (q == null || q.Id != WellKnownQualityProvider.Terror.Id) return;
-                int n = __instance.QAssoc.Level;
-                if (n == 0) return;
-                if (_setLevelNumber == null)
-                    _setLevelNumber = __instance.GetType().BaseType.GetMethod("SetLevelNumber",
-                        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic |
-                        System.Reflection.BindingFlags.Public);
-                if (_setLevelNumber != null)
-                    _setLevelNumber.Invoke(__instance, new object[] { n, true });
+                if (!QoLPlugin.PreviewTerror || __instance == null || theBranch == null || character == null) return;
+                string preview = TerrorPreviewFor(theBranch, character);
+                if (string.IsNullOrEmpty(preview)) return;
+
+                if (_descriptionField == null)
+                    _descriptionField = typeof(Sunless.Game.UI.Storylet.BranchPanel).GetField("_description",
+                        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+                if (_descriptionField == null) return;
+                UnityEngine.UI.Text text = _descriptionField.GetValue(__instance) as UnityEngine.UI.Text;
+                if (text == null) return;
+                text.gameObject.SetActive(true);
+                text.text = (text.text ?? "") + "\n" + preview;
             }
             catch (Exception e)
             {
                 QoLPlugin.Log.LogError("Terror preview failed: " + e);
             }
+        }
+
+        private static string TerrorPreviewFor(Branch branch, Character character)
+        {
+            int? success = TerrorDelta(branch.SuccessEvent, character);
+            int? failure = TerrorDelta(branch.DefaultEvent, character);
+            int? rareSuccess = TerrorDelta(branch.RareSuccessEvent, character);
+            int? rareFailure = TerrorDelta(branch.RareDefaultEvent, character);
+
+            string result = "";
+            if (success.HasValue && failure.HasValue && success.Value != failure.Value)
+                result = "Terror: success " + Signed(success.Value) + " / failure " + Signed(failure.Value);
+            else if (success.HasValue)
+                result = "Terror: " + Signed(success.Value);
+            else if (failure.HasValue)
+                result = "Terror: " + Signed(failure.Value);
+
+            if (rareSuccess.HasValue)
+                result += (result.Length == 0 ? "Terror: " : " / ") + "rare success " + Signed(rareSuccess.Value);
+            if (rareFailure.HasValue)
+                result += (result.Length == 0 ? "Terror: " : " / ") + "rare failure " + Signed(rareFailure.Value);
+            return result;
+        }
+
+        private static int? TerrorDelta(FailBetter.Core.Event ev, Character character)
+        {
+            if (ev == null || ev.QualitiesAffected == null) return null;
+            int total = 0;
+            bool found = false;
+            foreach (FailBetter.Core.QAssoc.EventQEffect effect in ev.QualitiesAffected)
+            {
+                if (effect == null || effect.AssociatedQuality == null) continue;
+                if (effect.AssociatedQuality.Id != WellKnownQualityProvider.Terror.Id) continue;
+                if (!EffectApplies(effect, character)) continue;
+                int delta = EffectDelta(effect, character);
+                total += delta;
+                found = true;
+            }
+            if (!found || total == 0) return null;
+            return total;
+        }
+
+        private static bool EffectApplies(FailBetter.Core.QAssoc.EventQEffect effect, Character character)
+        {
+            int cur = character.GetUnmodifiedQualityLevel(WellKnownQualityProvider.Terror);
+            if (effect.OnlyIfAtLeast.HasValue && cur < effect.OnlyIfAtLeast.Value) return false;
+            if (effect.OnlyIfNoMoreThan.HasValue && cur > effect.OnlyIfNoMoreThan.Value) return false;
+            return true;
+        }
+
+        private static int EffectDelta(FailBetter.Core.QAssoc.EventQEffect effect, Character character)
+        {
+            int cur = character.GetUnmodifiedQualityLevel(WellKnownQualityProvider.Terror);
+            int parsed;
+            if (!string.IsNullOrEmpty(effect.SetToExactlyAdvanced) && int.TryParse(effect.SetToExactlyAdvanced, out parsed))
+                return parsed - cur;
+            if (effect.SetToExactly.HasValue)
+                return effect.SetToExactly.Value - cur;
+            if (!string.IsNullOrEmpty(effect.ChangeByAdvanced) && int.TryParse(effect.ChangeByAdvanced, out parsed))
+                return parsed;
+            return effect.Level;
+        }
+
+        private static string Signed(int n)
+        {
+            return n > 0 ? ("+" + n) : n.ToString();
         }
     }
 }
