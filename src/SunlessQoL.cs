@@ -14,7 +14,7 @@ using Sunless.Game.UI.Menus;
 
 namespace SunlessQoL
 {
-    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.17.7")]
+    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.17.8")]
     public class QoLPlugin : BaseUnityPlugin
     {
         public const string GUID = "uptoh.sunless.manythings";
@@ -33,6 +33,9 @@ namespace SunlessQoL
         internal static bool DisableExplosions;
         internal static bool PreviewTerror;
         private const float EngineHeatCap = 10f;
+        private const int FallenLondonAreaId = 100321;
+        private static Sunless.Game.UI.Gazetteer.Tab _nativeBankTab;
+        private static System.Reflection.FieldInfo _tabButtonField;
 
         // ---- captured vanilla nav-constant defaults (grabbed once) ----
         private bool _captured;
@@ -121,6 +124,9 @@ namespace SunlessQoL
             PatchOne(h, typeof(EngineRecalculateHeatPatch));
             PatchOne(h, typeof(TerrorPreviewPatch));
             PatchOne(h, typeof(GazetteerBankTabPatch));
+            PatchOne(h, typeof(NativeBankDockPatch));
+            PatchOne(h, typeof(NativeBankUndockPatch));
+            PatchOne(h, typeof(NativeBankOpenPatch));
             Logger.LogInfo("Mr Eaten's Many Things loaded; patch registration finished.");
         }
 
@@ -153,6 +159,69 @@ namespace SunlessQoL
         {
             if (!DisableExplosions) return value;
             return value > EngineHeatCap ? EngineHeatCap : value;
+        }
+
+        internal static void RegisterNativeBankTab(Sunless.Game.UI.Gazetteer.Tab tab)
+        {
+            _nativeBankTab = tab;
+            RefreshNativeBankTab();
+        }
+
+        internal static void SetNativeBankTabVisibleForPort(Sunless.Game.Entities.Geography.PortDatum port)
+        {
+            SetNativeBankTabVisible(IsLondonPort(port));
+        }
+
+        internal static void HideNativeBankTab()
+        {
+            SetNativeBankTabVisible(false);
+        }
+
+        internal static void RefreshNativeBankTab()
+        {
+            SetNativeBankTabVisible(IsCurrentPortLondon());
+        }
+
+        private static bool IsCurrentPortLondon()
+        {
+            try
+            {
+                GameProvider gp = GameProvider.Instance;
+                if (gp == null || gp.CurrentCharacter == null) return false;
+                if (IsLondonPort(gp.CurrentCharacter.CurrentPort)) return true;
+                FailBetter.Core.Area area = gp.CurrentCharacter.CurrentArea;
+                if (area != null && area.Id == FallenLondonAreaId) return true;
+                if (area != null && !string.IsNullOrEmpty(area.Name) &&
+                    area.Name.IndexOf("London", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+                return false;
+            }
+            catch { return false; }
+        }
+
+        private static bool IsLondonPort(Sunless.Game.Entities.Geography.PortDatum port)
+        {
+            if (port == null) return false;
+            if (port.IsStartingPort) return true;
+            if (port.Area != null && port.Area.Id == FallenLondonAreaId) return true;
+            if (port.Area != null && !string.IsNullOrEmpty(port.Area.Name) &&
+                port.Area.Name.IndexOf("London", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            return string.Equals(port.Name, "Fallen London", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void SetNativeBankTabVisible(bool visible)
+        {
+            try
+            {
+                if (_nativeBankTab == null) return;
+                _nativeBankTab.SetActiveState(visible);
+                if (_tabButtonField == null)
+                    _tabButtonField = typeof(Sunless.Game.UI.Gazetteer.Tab).GetField("_theButton",
+                        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+                if (_tabButtonField == null) return;
+                UnityEngine.UI.Button b = _tabButtonField.GetValue(_nativeBankTab) as UnityEngine.UI.Button;
+                if (b != null && b.gameObject != null) b.gameObject.SetActive(visible);
+            }
+            catch (Exception e) { Log.LogError("Native Bank tab visibility failed: " + e); }
         }
 
         // Renders the bank natively into the Gazetteer's two book pages as grids of
@@ -1455,7 +1524,7 @@ namespace SunlessQoL
         {
             try
             {
-                __instance.AddTab("Bank", new Action(QoLPlugin.RenderBankFromTab), false);
+                QoLPlugin.RegisterNativeBankTab(__instance.AddTab("Bank", new Action(QoLPlugin.RenderBankFromTab), false));
                 MoveEchoesDisplayRight(__instance);
             }
             catch (Exception e) { QoLPlugin.Log.LogError("Adding port Bank tab failed: " + e); }
@@ -1481,6 +1550,33 @@ namespace SunlessQoL
                 rt.anchoredPosition = new Vector2(rt.anchoredPosition.x + 90f, rt.anchoredPosition.y);
             }
             catch (Exception e) { QoLPlugin.Log.LogError("Moving Echoes display failed: " + e); }
+        }
+    }
+
+    [HarmonyPatch(typeof(NavigationProvider), "Dock")]
+    public static class NativeBankDockPatch
+    {
+        private static void Postfix(Sunless.Game.Entities.Geography.PortDatum port)
+        {
+            QoLPlugin.SetNativeBankTabVisibleForPort(port);
+        }
+    }
+
+    [HarmonyPatch(typeof(NavigationProvider), "Undock")]
+    public static class NativeBankUndockPatch
+    {
+        private static void Prefix()
+        {
+            QoLPlugin.HideNativeBankTab();
+        }
+    }
+
+    [HarmonyPatch(typeof(Sunless.Game.UI.Gazetteer.Gazetteer), "Open")]
+    public static class NativeBankOpenPatch
+    {
+        private static void Postfix()
+        {
+            QoLPlugin.RefreshNativeBankTab();
         }
     }
 
