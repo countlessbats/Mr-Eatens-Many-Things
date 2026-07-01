@@ -64,6 +64,11 @@ This is a BepInEx 5 plugin for Sunless Sea. The main download is a drop-in packa
 - Click an item in the bank to withdraw all of it.
 - Bank data is keyed by a per-run captain id rather than the captain's name, so captain names are not permanently reserved.
 
+**Config**
+
+- Show or hide individual menu features by panel.
+- Bank stays available.
+
 ### Installation
 
 1. Close Sunless Sea.

@@ -14,7 +14,7 @@ using Sunless.Game.UI.Menus;
 
 namespace SunlessQoL
 {
-    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.18.3")]
+    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.18.4")]
     public class QoLPlugin : BaseUnityPlugin
     {
         public const string GUID = "uptoh.sunless.manythings";
@@ -27,6 +27,11 @@ namespace SunlessQoL
         private ConfigEntry<bool> _disableExplosions, _previewTerror;
         private ConfigEntry<float> _accel;
         private ConfigEntry<KeyCode> _toggleKey, _holdKey, _sayKey;
+        private ConfigEntry<bool> _showZeeTerror, _showZeeHunger, _showZeeFuel, _showZeeDamage;
+        private ConfigEntry<bool> _showZeeExplosions, _showZeeTerrorPreview, _showZeeSay, _showZeeTime;
+        private ConfigEntry<bool>[] _showNumbers;
+        private ConfigEntry<bool> _showShipHull, _showShipSwap, _showShipGear, _showShipWeapons;
+        private ConfigEntry<bool> _showCrewCount, _showCrewOfficers, _showItymsSpawner;
 
         // Read by the static set_Hull patch; updated each frame.
         internal static float DamageMult = 1f;
@@ -55,11 +60,12 @@ namespace SunlessQoL
         // ---- ui ----
         private bool _show;
         private int _tab;
-        private static readonly string[] TabNames = { "Zee Law", "7 Numbers", "The Ship", "The Crew", "Ityms", "Bank" };
+        private static readonly string[] TabNames = { "Zee Law", "7 Numbers", "The Ship", "The Crew", "Ityms", "Bank", "Config" };
         private Rect _rect = new Rect(70f, 70f, 540f, 0f);
         private string _status = "";
         private GUIStyle _header;
         private bool _styled;
+        private Vector2 _configScroll;
 
         // ---- "7 Numbers" panel: Iron, Mirrors, Pages, Hearts, Veils, Hunger, Terror ----
         private static readonly string[] NumNames =
@@ -130,6 +136,7 @@ namespace SunlessQoL
                 "Hold to accelerate; release to return to normal.");
             _sayKey = Config.Bind("ZeeLaw", "SomethingAwaitsYouKey", KeyCode.F9,
                 "Tap to grant Something Awaits You.");
+            BindFeatureVisibility();
 
             Harmony h = new Harmony(GUID);
             PatchOne(h, typeof(MainMenuPatch));
@@ -155,6 +162,56 @@ namespace SunlessQoL
             {
                 Logger.LogError("Failed to apply " + patchType.Name + ": " + e);
             }
+        }
+
+        private void BindFeatureVisibility()
+        {
+            _showZeeTerror = BindFeature("Zee Law", "Terror Gain");
+            _showZeeHunger = BindFeature("Zee Law", "Hunger Gain");
+            _showZeeFuel = BindFeature("Zee Law", "Fuel Consumption");
+            _showZeeDamage = BindFeature("Zee Law", "Damage Factor");
+            _showZeeExplosions = BindFeature("Zee Law", "Disable Explosions");
+            _showZeeTerrorPreview = BindFeature("Zee Law", "Preview Terror");
+            _showZeeSay = BindFeature("Zee Law", "Something Awaits You");
+            _showZeeTime = BindFeature("Zee Law", "Time Acceleration");
+
+            _showNumbers = new ConfigEntry<bool>[NumNames.Length];
+            for (int i = 0; i < NumNames.Length; i++)
+                _showNumbers[i] = BindFeature("7 Numbers", NumNames[i]);
+
+            _showShipHull = BindFeature("The Ship", "Hull");
+            _showShipSwap = BindFeature("The Ship", "Ship Swap");
+            _showShipGear = BindFeature("The Ship", "Equipment Slots");
+            _showShipWeapons = BindFeature("The Ship", "Weapon Item Slots");
+
+            _showCrewCount = BindFeature("The Crew", "Crew");
+            _showCrewOfficers = BindFeature("The Crew", "Officer Slots");
+
+            _showItymsSpawner = BindFeature("Ityms", "Item Spawner");
+        }
+
+        private ConfigEntry<bool> BindFeature(string panel, string feature)
+        {
+            string key = "Show" + SanitizeKey(panel) + SanitizeKey(feature);
+            return Config.Bind("Menu Features", key, true, "Show " + panel + " / " + feature + " in the cheat menu.");
+        }
+
+        private static string SanitizeKey(string s)
+        {
+            if (s == null) return "";
+            System.Text.StringBuilder b = new System.Text.StringBuilder();
+            for (int i = 0; i < s.Length; i++)
+            {
+                char c = s[i];
+                if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))
+                    b.Append(c);
+            }
+            return b.ToString();
+        }
+
+        private static bool Visible(ConfigEntry<bool> entry)
+        {
+            return entry == null || entry.Value;
         }
 
         internal void Toggle()
@@ -690,7 +747,8 @@ namespace SunlessQoL
             else if (_tab == 2) DrawTheShip();
             else if (_tab == 3) DrawTheCrew();
             else if (_tab == 4) DrawItyms();
-            else DrawBank();
+            else if (_tab == 5) DrawBank();
+            else DrawConfig();
 
             GUILayout.Space(8f);
             if (!string.IsNullOrEmpty(_status))
@@ -706,50 +764,63 @@ namespace SunlessQoL
 
         private void DrawZeeLaw()
         {
-            RateRow("TERROR GAIN", _terror);
-            GUILayout.Space(8f);
-            RateRow("HUNGER GAIN", _hunger);
-            GUILayout.Space(8f);
-            RateRow("FUEL CONSUMPTION", _fuel);
-            GUILayout.Space(8f);
-            RateRow("DAMAGE FACTOR", _damage);
+            bool anyRate = false;
+            if (Visible(_showZeeTerror)) { RateRow("TERROR GAIN", _terror); anyRate = true; }
+            if (Visible(_showZeeHunger)) { if (anyRate) GUILayout.Space(8f); RateRow("HUNGER GAIN", _hunger); anyRate = true; }
+            if (Visible(_showZeeFuel)) { if (anyRate) GUILayout.Space(8f); RateRow("FUEL CONSUMPTION", _fuel); anyRate = true; }
+            if (Visible(_showZeeDamage)) { if (anyRate) GUILayout.Space(8f); RateRow("DAMAGE FACTOR", _damage); anyRate = true; }
 
-            GUILayout.Space(12f);
-            GUILayout.Label("ZEE LAW TOGGLES", _header);
-            _disableExplosions.Value = GUILayout.Toggle(_disableExplosions.Value, "Disable Explosions");
-            _previewTerror.Value = GUILayout.Toggle(_previewTerror.Value, "Preview Terror");
+            if (Visible(_showZeeExplosions) || Visible(_showZeeTerrorPreview))
+            {
+                GUILayout.Space(12f);
+                GUILayout.Label("ZEE LAW TOGGLES", _header);
+                if (Visible(_showZeeExplosions))
+                    _disableExplosions.Value = GUILayout.Toggle(_disableExplosions.Value, "Disable Explosions");
+                if (Visible(_showZeeTerrorPreview))
+                    _previewTerror.Value = GUILayout.Toggle(_previewTerror.Value, "Preview Terror");
+            }
 
-            GUILayout.Space(12f);
-            GUILayout.Label("SOMETHING AWAITS YOU", _header);
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Grant key", GUILayout.Width(90f));
-            if (GUILayout.Button(_rebind == Rebind.Say ? "<press a key>" : _sayKey.Value.ToString()))
-                _rebind = Rebind.Say;
-            GUILayout.EndHorizontal();
+            if (Visible(_showZeeSay))
+            {
+                GUILayout.Space(12f);
+                GUILayout.Label("SOMETHING AWAITS YOU", _header);
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("Grant key", GUILayout.Width(90f));
+                if (GUILayout.Button(_rebind == Rebind.Say ? "<press a key>" : _sayKey.Value.ToString()))
+                    _rebind = Rebind.Say;
+                GUILayout.EndHorizontal();
+            }
 
-            GUILayout.Space(12f);
-            GUILayout.Label("TIME ACCELERATION", _header);
+            if (Visible(_showZeeTime))
+            {
+                GUILayout.Space(12f);
+                GUILayout.Label("TIME ACCELERATION", _header);
 
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Speed x" + _accel.Value.ToString("0.0"), GUILayout.Width(90f));
-            float v = GUILayout.HorizontalSlider(_accel.Value, 1f, 10f);
-            _accel.Value = Mathf.Round(v * 10f) / 10f;
-            GUILayout.EndHorizontal();
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("Speed x" + _accel.Value.ToString("0.0"), GUILayout.Width(90f));
+                float v = GUILayout.HorizontalSlider(_accel.Value, 1f, 10f);
+                _accel.Value = Mathf.Round(v * 10f) / 10f;
+                GUILayout.EndHorizontal();
 
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Toggle key", GUILayout.Width(90f));
-            if (GUILayout.Button(_rebind == Rebind.Toggle ? "<press a key>" : _toggleKey.Value.ToString()))
-                _rebind = Rebind.Toggle;
-            GUILayout.EndHorizontal();
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("Toggle key", GUILayout.Width(90f));
+                if (GUILayout.Button(_rebind == Rebind.Toggle ? "<press a key>" : _toggleKey.Value.ToString()))
+                    _rebind = Rebind.Toggle;
+                GUILayout.EndHorizontal();
 
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Hold key", GUILayout.Width(90f));
-            if (GUILayout.Button(_rebind == Rebind.Hold ? "<press a key>" : _holdKey.Value.ToString()))
-                _rebind = Rebind.Hold;
-            GUILayout.EndHorizontal();
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("Hold key", GUILayout.Width(90f));
+                if (GUILayout.Button(_rebind == Rebind.Hold ? "<press a key>" : _holdKey.Value.ToString()))
+                    _rebind = Rebind.Hold;
+                GUILayout.EndHorizontal();
 
-            GUILayout.Label(_accelerating ? "Status: ACCELERATING x" + _accel.Value.ToString("0.0")
-                                          : "Status: normal speed");
+                GUILayout.Label(_accelerating ? "Status: ACCELERATING x" + _accel.Value.ToString("0.0")
+                                              : "Status: normal speed");
+            }
+
+            if (!anyRate && !Visible(_showZeeExplosions) && !Visible(_showZeeTerrorPreview) &&
+                !Visible(_showZeeSay) && !Visible(_showZeeTime))
+                GUILayout.Label("All Zee Law features are hidden. Use Config to show them again.");
         }
 
         private void DrawSevenNumbers()
@@ -767,9 +838,11 @@ namespace SunlessQoL
             GUILayout.Label("Set a value, then click Set / press Enter / click away.", _header);
             GUILayout.Space(4f);
 
+            bool drewAny = false;
             for (int i = 0; i < NumNames.Length; i++)
             {
-                if (i == 5 || i == 8) GUILayout.Space(12f); // stats / menaces / Echoes
+                if (_showNumbers != null && i < _showNumbers.Length && !Visible(_showNumbers[i])) continue;
+                if ((i == 5 || i == 8) && drewAny) GUILayout.Space(12f); // stats / menaces / Echoes
                 GUILayout.BeginHorizontal();
                 GUILayout.Label(NumNames[i], GUILayout.Width(70f));
                 GUI.SetNextControlName("num" + i);
@@ -778,7 +851,11 @@ namespace SunlessQoL
                     ConfirmNumber(i);
                 GUILayout.Label("now " + CurrentLevel(i));
                 GUILayout.EndHorizontal();
+                drewAny = true;
             }
+
+            if (!drewAny)
+                GUILayout.Label("All 7 Numbers features are hidden. Use Config to show them again.");
 
             // Enter confirms the focused field.
             UnityEngine.Event e = UnityEngine.Event.current;
@@ -1026,54 +1103,77 @@ namespace SunlessQoL
                 _shipLoaded = true;
             }
 
+            if (_selectedSlot >= 0 && !Visible(_showShipGear)) _selectedSlot = -1;
+            if (_selectedCombatSlot >= 0 && !Visible(_showShipWeapons)) _selectedCombatSlot = -1;
+            if (_selectedShip && !Visible(_showShipSwap)) _selectedShip = false;
             if (_selectedSlot >= 0) { DrawGearList(); return; }
             if (_selectedCombatSlot >= 0) { DrawCombatItemList(); return; }
             if (_selectedShip) { DrawShipList(); return; }
 
             Quality ship = gp.CurrentCharacter.Ship;
-            GUILayout.Label("Ship: " + (ship != null ? ship.Name : "(none)") + "   (click a slot to fit gear)", _header);
+            GUILayout.Label("Ship: " + (ship != null ? ship.Name : "(none)") +
+                (Visible(_showShipGear) ? "   (click a slot to fit gear)" : ""), _header);
             GUILayout.Space(4f);
 
             // Hull integrity, above the equipment.
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Hull", GUILayout.Width(70f));
-            GUI.SetNextControlName("hull");
-            _hull = GUILayout.TextField(_hull ?? "", GUILayout.Width(90f));
-            if (GUILayout.Button("Set", GUILayout.Width(50f))) ConfirmHull();
-            GUILayout.Label("now " + CurrentHull());
-            GUILayout.EndHorizontal();
-            UnityEngine.Event e = UnityEngine.Event.current;
-            if (e.type == EventType.KeyDown &&
-                (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) &&
-                GUI.GetNameOfFocusedControl() == "hull")
-            { ConfirmHull(); e.Use(); }
+            if (Visible(_showShipHull))
+            {
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("Hull", GUILayout.Width(70f));
+                GUI.SetNextControlName("hull");
+                _hull = GUILayout.TextField(_hull ?? "", GUILayout.Width(90f));
+                if (GUILayout.Button("Set", GUILayout.Width(50f))) ConfirmHull();
+                GUILayout.Label("now " + CurrentHull());
+                GUILayout.EndHorizontal();
+                UnityEngine.Event e = UnityEngine.Event.current;
+                if (e.type == EventType.KeyDown &&
+                    (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) &&
+                    GUI.GetNameOfFocusedControl() == "hull")
+                { ConfirmHull(); e.Use(); }
+            }
 
             GUILayout.Space(8f);
 
             // Paperdoll: left column (Deck/Auxiliary/Aft), centre, right column (Forward/Bridge/Engines)
-            GUILayout.BeginHorizontal();
-            GUILayout.BeginVertical(GUILayout.Width(150f));
-            SlotButton(0); GUILayout.Space(6f); SlotButton(3); GUILayout.Space(6f); SlotButton(2);
-            GUILayout.EndVertical();
+            if (Visible(_showShipGear) || Visible(_showShipSwap))
+            {
+                GUILayout.BeginHorizontal();
+                GUILayout.BeginVertical(GUILayout.Width(150f));
+                if (Visible(_showShipGear))
+                {
+                    SlotButton(0); GUILayout.Space(6f); SlotButton(3); GUILayout.Space(6f); SlotButton(2);
+                }
+                GUILayout.EndVertical();
 
-            GUILayout.BeginVertical(GUILayout.Width(110f));
-            GUILayout.FlexibleSpace();
-            if (GUILayout.Button((ship != null ? ship.Name : "SHIP") + "\n\n(swap ship)",
-                    GUILayout.Width(110f), GUILayout.Height(120f)))
-            { _selectedShip = true; _gearScroll = Vector2.zero; }
-            GUILayout.FlexibleSpace();
-            GUILayout.EndVertical();
+                GUILayout.BeginVertical(GUILayout.Width(110f));
+                GUILayout.FlexibleSpace();
+                if (Visible(_showShipSwap) && GUILayout.Button((ship != null ? ship.Name : "SHIP") + "\n\n(swap ship)",
+                        GUILayout.Width(110f), GUILayout.Height(120f)))
+                { _selectedShip = true; _gearScroll = Vector2.zero; }
+                GUILayout.FlexibleSpace();
+                GUILayout.EndVertical();
 
-            GUILayout.BeginVertical(GUILayout.Width(150f));
-            SlotButton(1); GUILayout.Space(6f); SlotButton(4); GUILayout.Space(6f); SlotButton(5);
-            GUILayout.EndVertical();
-            GUILayout.EndHorizontal();
+                GUILayout.BeginVertical(GUILayout.Width(150f));
+                if (Visible(_showShipGear))
+                {
+                    SlotButton(1); GUILayout.Space(6f); SlotButton(4); GUILayout.Space(6f); SlotButton(5);
+                }
+                GUILayout.EndVertical();
+                GUILayout.EndHorizontal();
+            }
 
-            GUILayout.Space(8f);
-            GUILayout.Label("Weapon slots (click a slot to assign):", _header);
-            GUILayout.BeginHorizontal();
-            for (int s = 1; s <= 6; s++) CombatItemSlotButton(s);
-            GUILayout.EndHorizontal();
+            if (Visible(_showShipWeapons))
+            {
+                GUILayout.Space(8f);
+                GUILayout.Label("Weapon slots (click a slot to assign):", _header);
+                GUILayout.BeginHorizontal();
+                for (int s = 1; s <= 6; s++) CombatItemSlotButton(s);
+                GUILayout.EndHorizontal();
+            }
+
+            if (!Visible(_showShipHull) && !Visible(_showShipSwap) &&
+                !Visible(_showShipGear) && !Visible(_showShipWeapons))
+                GUILayout.Label("All Ship features are hidden. Use Config to show them again.");
         }
 
         private void DrawShipList()
@@ -1356,26 +1456,36 @@ namespace SunlessQoL
                 _crewLoaded = true;
             }
 
+            if (_selectedSlot >= 0 && !Visible(_showCrewOfficers)) _selectedSlot = -1;
             if (_selectedSlot >= 0) { DrawGearList(); return; }
 
             // Crew count, above the officers.
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Crew", GUILayout.Width(70f));
-            GUI.SetNextControlName("crew");
-            _crew = GUILayout.TextField(_crew ?? "", GUILayout.Width(90f));
-            if (GUILayout.Button("Set", GUILayout.Width(50f))) ConfirmCrew();
-            GUILayout.Label("now " + CurrentCrew());
-            GUILayout.EndHorizontal();
-            UnityEngine.Event e = UnityEngine.Event.current;
-            if (e.type == EventType.KeyDown &&
-                (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) &&
-                GUI.GetNameOfFocusedControl() == "crew")
-            { ConfirmCrew(); e.Use(); }
+            if (Visible(_showCrewCount))
+            {
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("Crew", GUILayout.Width(70f));
+                GUI.SetNextControlName("crew");
+                _crew = GUILayout.TextField(_crew ?? "", GUILayout.Width(90f));
+                if (GUILayout.Button("Set", GUILayout.Width(50f))) ConfirmCrew();
+                GUILayout.Label("now " + CurrentCrew());
+                GUILayout.EndHorizontal();
+                UnityEngine.Event e = UnityEngine.Event.current;
+                if (e.type == EventType.KeyDown &&
+                    (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) &&
+                    GUI.GetNameOfFocusedControl() == "crew")
+                { ConfirmCrew(); e.Use(); }
+            }
 
-            GUILayout.Space(8f);
-            GUILayout.Label("Officers (click a slot to assign):", _header);
-            System.Collections.Generic.List<Quality> slots = OfficerSlots();
-            for (int i = 0; i < slots.Count; i++) SlotButton(i);
+            if (Visible(_showCrewOfficers))
+            {
+                GUILayout.Space(8f);
+                GUILayout.Label("Officers (click a slot to assign):", _header);
+                System.Collections.Generic.List<Quality> slots = OfficerSlots();
+                for (int i = 0; i < slots.Count; i++) SlotButton(i);
+            }
+
+            if (!Visible(_showCrewCount) && !Visible(_showCrewOfficers))
+                GUILayout.Label("All Crew features are hidden. Use Config to show them again.");
         }
 
         private static int CurrentCrew()
@@ -1441,6 +1551,12 @@ namespace SunlessQoL
 
         private void DrawItyms()
         {
+            if (!Visible(_showItymsSpawner))
+            {
+                GUILayout.Label("The Ityms spawner is hidden. Use Config to show it again.");
+                return;
+            }
+
             GameProvider gp = GameProvider.Instance;
             if (gp == null || gp.CurrentCharacter == null)
             {
@@ -1538,6 +1654,86 @@ namespace SunlessQoL
                 _status = "Spawn failed: " + e.Message;
                 Log.LogError(e);
             }
+        }
+
+        // ===================== Config panel =====================
+
+        private void DrawConfig()
+        {
+            GUILayout.Label("Show or hide menu features. Bank stays available.", _header);
+            GUILayout.Space(4f);
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Show All", GUILayout.Width(100f))) SetAllFeaturesVisible(true);
+            if (GUILayout.Button("Hide All", GUILayout.Width(100f))) SetAllFeaturesVisible(false);
+            GUILayout.EndHorizontal();
+            GUILayout.Space(6f);
+
+            _configScroll = GUILayout.BeginScrollView(_configScroll, GUILayout.Height(410f));
+            ConfigPanelHeader("Zee Law");
+            ConfigRow(_showZeeTerror, "Terror Gain");
+            ConfigRow(_showZeeHunger, "Hunger Gain");
+            ConfigRow(_showZeeFuel, "Fuel Consumption");
+            ConfigRow(_showZeeDamage, "Damage Factor");
+            ConfigRow(_showZeeExplosions, "Disable Explosions");
+            ConfigRow(_showZeeTerrorPreview, "Preview Terror");
+            ConfigRow(_showZeeSay, "Something Awaits You hotkey");
+            ConfigRow(_showZeeTime, "Time Acceleration");
+
+            ConfigPanelHeader("7 Numbers");
+            for (int i = 0; i < NumNames.Length; i++)
+                ConfigRow(_showNumbers[i], NumNames[i]);
+
+            ConfigPanelHeader("The Ship");
+            ConfigRow(_showShipHull, "Hull");
+            ConfigRow(_showShipSwap, "Ship Swap");
+            ConfigRow(_showShipGear, "Equipment Slots");
+            ConfigRow(_showShipWeapons, "Weapon Item Slots");
+
+            ConfigPanelHeader("The Crew");
+            ConfigRow(_showCrewCount, "Crew");
+            ConfigRow(_showCrewOfficers, "Officer Slots");
+
+            ConfigPanelHeader("Ityms");
+            ConfigRow(_showItymsSpawner, "Item Spawner");
+            GUILayout.EndScrollView();
+        }
+
+        private void ConfigPanelHeader(string title)
+        {
+            GUILayout.Space(8f);
+            GUILayout.Label(title, _header);
+        }
+
+        private void ConfigRow(ConfigEntry<bool> entry, string label)
+        {
+            if (entry == null) return;
+            entry.Value = GUILayout.Toggle(entry.Value, label);
+        }
+
+        private void SetAllFeaturesVisible(bool visible)
+        {
+            SetVisible(_showZeeTerror, visible);
+            SetVisible(_showZeeHunger, visible);
+            SetVisible(_showZeeFuel, visible);
+            SetVisible(_showZeeDamage, visible);
+            SetVisible(_showZeeExplosions, visible);
+            SetVisible(_showZeeTerrorPreview, visible);
+            SetVisible(_showZeeSay, visible);
+            SetVisible(_showZeeTime, visible);
+            if (_showNumbers != null)
+                for (int i = 0; i < _showNumbers.Length; i++) SetVisible(_showNumbers[i], visible);
+            SetVisible(_showShipHull, visible);
+            SetVisible(_showShipSwap, visible);
+            SetVisible(_showShipGear, visible);
+            SetVisible(_showShipWeapons, visible);
+            SetVisible(_showCrewCount, visible);
+            SetVisible(_showCrewOfficers, visible);
+            SetVisible(_showItymsSpawner, visible);
+        }
+
+        private void SetVisible(ConfigEntry<bool> entry, bool visible)
+        {
+            if (entry != null) entry.Value = visible;
         }
 
         // ===================== Bank panel =====================

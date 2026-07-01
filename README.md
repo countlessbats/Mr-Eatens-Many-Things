@@ -4,7 +4,7 @@ Cheat and quality-of-life mod for **Sunless Sea**.
 
 Author: countlessbats
 
-Current version: **2.18.3**
+Current version: **2.18.4**
 
 ## What It Does
 
@@ -42,6 +42,9 @@ Features:
   - Native Gazetteer Bank tab in London.
   - Cargo and Curiosities sections.
   - Storage is keyed by a per-run captain id rather than captain name, so names are not reserved forever.
+- **Config**
+  - Show or hide individual menu features by panel.
+  - Bank stays available.
 
 ## Installation
 
