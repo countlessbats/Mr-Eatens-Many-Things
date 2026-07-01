@@ -14,7 +14,7 @@ using Sunless.Game.UI.Menus;
 
 namespace SunlessQoL
 {
-    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.18.4")]
+    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.18.5")]
     public class QoLPlugin : BaseUnityPlugin
     {
         public const string GUID = "uptoh.sunless.manythings";
@@ -32,6 +32,7 @@ namespace SunlessQoL
         private ConfigEntry<bool>[] _showNumbers;
         private ConfigEntry<bool> _showShipHull, _showShipSwap, _showShipGear, _showShipWeapons;
         private ConfigEntry<bool> _showCrewCount, _showCrewOfficers, _showItymsSpawner;
+        private ConfigEntry<bool> _showBankLondon, _showBankMenu;
 
         // Read by the static set_Hull patch; updated each frame.
         internal static float DamageMult = 1f;
@@ -188,6 +189,9 @@ namespace SunlessQoL
             _showCrewOfficers = BindFeature("The Crew", "Officer Slots");
 
             _showItymsSpawner = BindFeature("Ityms", "Item Spawner");
+
+            _showBankLondon = BindFeature("Bank", "London Bank");
+            _showBankMenu = BindFeature("Bank", "Cheat Menu Bank");
         }
 
         private ConfigEntry<bool> BindFeature(string panel, string feature)
@@ -212,6 +216,11 @@ namespace SunlessQoL
         private static bool Visible(ConfigEntry<bool> entry)
         {
             return entry == null || entry.Value;
+        }
+
+        private static bool LondonBankEnabled()
+        {
+            return Instance == null || Visible(Instance._showBankLondon);
         }
 
         internal void Toggle()
@@ -240,7 +249,7 @@ namespace SunlessQoL
 
         internal static void SetNativeBankTabVisibleForPort(Sunless.Game.Entities.Geography.PortDatum port)
         {
-            SetNativeBankTabVisible(IsLondonPort(port));
+            SetNativeBankTabVisible(LondonBankEnabled() && IsLondonPort(port));
         }
 
         internal static void HideNativeBankTab()
@@ -250,7 +259,7 @@ namespace SunlessQoL
 
         internal static void RefreshNativeBankTab()
         {
-            SetNativeBankTabVisible(IsCurrentPortLondon());
+            SetNativeBankTabVisible(LondonBankEnabled() && IsCurrentPortLondon());
         }
 
         private static bool IsCurrentPortLondon()
@@ -305,7 +314,7 @@ namespace SunlessQoL
                 _echoesBasePosition = rt.anchoredPosition;
                 _echoesPositionCaptured = true;
             }
-            SetEchoesShifted(IsCurrentPortLondon());
+            SetEchoesShifted(LondonBankEnabled() && IsCurrentPortLondon());
         }
 
         private static void SetEchoesShifted(bool shifted)
@@ -725,7 +734,17 @@ namespace SunlessQoL
         private void DrawWindow(int id)
         {
             GUILayout.Space(2f);
-            int newTab = GUILayout.Toolbar(_tab, TabNames);
+            System.Collections.Generic.List<string> visibleNames = new System.Collections.Generic.List<string>();
+            System.Collections.Generic.List<int> visibleIds = new System.Collections.Generic.List<int>();
+            BuildVisibleTabs(visibleNames, visibleIds);
+            int selectedIndex = IndexOfTabId(visibleIds, _tab);
+            if (selectedIndex < 0)
+            {
+                _tab = 6;
+                selectedIndex = IndexOfTabId(visibleIds, _tab);
+            }
+            int newIndex = GUILayout.Toolbar(selectedIndex, visibleNames.ToArray());
+            int newTab = (newIndex >= 0 && newIndex < visibleIds.Count) ? visibleIds[newIndex] : _tab;
             if (newTab != _tab)
             {
                 _tab = newTab;
@@ -760,6 +779,67 @@ namespace SunlessQoL
             }
 
             GUI.DragWindow(new Rect(0f, 0f, 100000f, 20f));
+        }
+
+        private void BuildVisibleTabs(System.Collections.Generic.List<string> names, System.Collections.Generic.List<int> ids)
+        {
+            AddVisibleTab(names, ids, 0, HasVisibleZeeLaw());
+            AddVisibleTab(names, ids, 1, HasVisibleNumbers());
+            AddVisibleTab(names, ids, 2, HasVisibleShip());
+            AddVisibleTab(names, ids, 3, HasVisibleCrew());
+            AddVisibleTab(names, ids, 4, HasVisibleItyms());
+            AddVisibleTab(names, ids, 5, HasVisibleBankMenu());
+            AddVisibleTab(names, ids, 6, true);
+        }
+
+        private void AddVisibleTab(System.Collections.Generic.List<string> names, System.Collections.Generic.List<int> ids, int id, bool visible)
+        {
+            if (!visible) return;
+            names.Add(TabNames[id]);
+            ids.Add(id);
+        }
+
+        private int IndexOfTabId(System.Collections.Generic.List<int> ids, int id)
+        {
+            for (int i = 0; i < ids.Count; i++)
+                if (ids[i] == id) return i;
+            return -1;
+        }
+
+        private bool HasVisibleZeeLaw()
+        {
+            return Visible(_showZeeTerror) || Visible(_showZeeHunger) || Visible(_showZeeFuel) ||
+                Visible(_showZeeDamage) || Visible(_showZeeExplosions) || Visible(_showZeeTerrorPreview) ||
+                Visible(_showZeeSay) || Visible(_showZeeTime);
+        }
+
+        private bool HasVisibleNumbers()
+        {
+            if (_showNumbers == null) return true;
+            for (int i = 0; i < _showNumbers.Length; i++)
+                if (Visible(_showNumbers[i])) return true;
+            return false;
+        }
+
+        private bool HasVisibleShip()
+        {
+            return Visible(_showShipHull) || Visible(_showShipSwap) ||
+                Visible(_showShipGear) || Visible(_showShipWeapons);
+        }
+
+        private bool HasVisibleCrew()
+        {
+            return Visible(_showCrewCount) || Visible(_showCrewOfficers);
+        }
+
+        private bool HasVisibleItyms()
+        {
+            return Visible(_showItymsSpawner);
+        }
+
+        private bool HasVisibleBankMenu()
+        {
+            return Visible(_showBankMenu);
         }
 
         private void DrawZeeLaw()
@@ -1669,7 +1749,7 @@ namespace SunlessQoL
             GUILayout.Space(6f);
 
             _configScroll = GUILayout.BeginScrollView(_configScroll, GUILayout.Height(410f));
-            ConfigPanelHeader("Zee Law");
+            ConfigPanelHeader("Zee Law", ZeeLawFeatureEntries());
             ConfigRow(_showZeeTerror, "Terror Gain");
             ConfigRow(_showZeeHunger, "Hunger Gain");
             ConfigRow(_showZeeFuel, "Fuel Consumption");
@@ -1679,61 +1759,102 @@ namespace SunlessQoL
             ConfigRow(_showZeeSay, "Something Awaits You hotkey");
             ConfigRow(_showZeeTime, "Time Acceleration");
 
-            ConfigPanelHeader("7 Numbers");
+            ConfigPanelHeader("7 Numbers", _showNumbers);
             for (int i = 0; i < NumNames.Length; i++)
                 ConfigRow(_showNumbers[i], NumNames[i]);
 
-            ConfigPanelHeader("The Ship");
+            ConfigPanelHeader("The Ship", ShipFeatureEntries());
             ConfigRow(_showShipHull, "Hull");
             ConfigRow(_showShipSwap, "Ship Swap");
             ConfigRow(_showShipGear, "Equipment Slots");
             ConfigRow(_showShipWeapons, "Weapon Item Slots");
 
-            ConfigPanelHeader("The Crew");
+            ConfigPanelHeader("The Crew", CrewFeatureEntries());
             ConfigRow(_showCrewCount, "Crew");
             ConfigRow(_showCrewOfficers, "Officer Slots");
 
-            ConfigPanelHeader("Ityms");
+            ConfigPanelHeader("Ityms", ItymsFeatureEntries());
             ConfigRow(_showItymsSpawner, "Item Spawner");
+
+            ConfigPanelHeader("Bank", BankFeatureEntries());
+            ConfigRow(_showBankLondon, "London Bank");
+            ConfigRow(_showBankMenu, "Cheat Menu Bank");
             GUILayout.EndScrollView();
         }
 
-        private void ConfigPanelHeader(string title)
+        private void ConfigPanelHeader(string title, ConfigEntry<bool>[] entries)
         {
             GUILayout.Space(8f);
-            GUILayout.Label(title, _header);
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(title, _header, GUILayout.Width(170f));
+            if (GUILayout.Button("Show All", GUILayout.Width(80f))) SetFeatureEntriesVisible(entries, true);
+            if (GUILayout.Button("Hide All", GUILayout.Width(80f))) SetFeatureEntriesVisible(entries, false);
+            GUILayout.EndHorizontal();
         }
 
         private void ConfigRow(ConfigEntry<bool> entry, string label)
         {
             if (entry == null) return;
+            bool old = entry.Value;
             entry.Value = GUILayout.Toggle(entry.Value, label);
+            if (old != entry.Value && entry == _showBankLondon)
+                RefreshNativeBankTab();
         }
 
         private void SetAllFeaturesVisible(bool visible)
         {
-            SetVisible(_showZeeTerror, visible);
-            SetVisible(_showZeeHunger, visible);
-            SetVisible(_showZeeFuel, visible);
-            SetVisible(_showZeeDamage, visible);
-            SetVisible(_showZeeExplosions, visible);
-            SetVisible(_showZeeTerrorPreview, visible);
-            SetVisible(_showZeeSay, visible);
-            SetVisible(_showZeeTime, visible);
-            if (_showNumbers != null)
-                for (int i = 0; i < _showNumbers.Length; i++) SetVisible(_showNumbers[i], visible);
-            SetVisible(_showShipHull, visible);
-            SetVisible(_showShipSwap, visible);
-            SetVisible(_showShipGear, visible);
-            SetVisible(_showShipWeapons, visible);
-            SetVisible(_showCrewCount, visible);
-            SetVisible(_showCrewOfficers, visible);
-            SetVisible(_showItymsSpawner, visible);
+            SetFeatureEntriesVisible(ZeeLawFeatureEntries(), visible);
+            SetFeatureEntriesVisible(_showNumbers, visible);
+            SetFeatureEntriesVisible(ShipFeatureEntries(), visible);
+            SetFeatureEntriesVisible(CrewFeatureEntries(), visible);
+            SetFeatureEntriesVisible(ItymsFeatureEntries(), visible);
+            SetFeatureEntriesVisible(BankFeatureEntries(), visible);
+            RefreshNativeBankTab();
+        }
+
+        private void SetFeatureEntriesVisible(ConfigEntry<bool>[] entries, bool visible)
+        {
+            if (entries == null) return;
+            bool refreshBank = false;
+            for (int i = 0; i < entries.Length; i++)
+            {
+                if (entries[i] == _showBankLondon) refreshBank = true;
+                SetVisible(entries[i], visible);
+            }
+            if (refreshBank) RefreshNativeBankTab();
         }
 
         private void SetVisible(ConfigEntry<bool> entry, bool visible)
         {
             if (entry != null) entry.Value = visible;
+        }
+
+        private ConfigEntry<bool>[] ZeeLawFeatureEntries()
+        {
+            return new ConfigEntry<bool>[] {
+                _showZeeTerror, _showZeeHunger, _showZeeFuel, _showZeeDamage,
+                _showZeeExplosions, _showZeeTerrorPreview, _showZeeSay, _showZeeTime
+            };
+        }
+
+        private ConfigEntry<bool>[] ShipFeatureEntries()
+        {
+            return new ConfigEntry<bool>[] { _showShipHull, _showShipSwap, _showShipGear, _showShipWeapons };
+        }
+
+        private ConfigEntry<bool>[] CrewFeatureEntries()
+        {
+            return new ConfigEntry<bool>[] { _showCrewCount, _showCrewOfficers };
+        }
+
+        private ConfigEntry<bool>[] ItymsFeatureEntries()
+        {
+            return new ConfigEntry<bool>[] { _showItymsSpawner };
+        }
+
+        private ConfigEntry<bool>[] BankFeatureEntries()
+        {
+            return new ConfigEntry<bool>[] { _showBankLondon, _showBankMenu };
         }
 
         // ===================== Bank panel =====================

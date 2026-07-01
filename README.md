@@ -4,7 +4,7 @@ Cheat and quality-of-life mod for **Sunless Sea**.
 
 Author: countlessbats
 
-Current version: **2.18.4**
+Current version: **2.18.5**
 
 ## What It Does
 
@@ -44,7 +44,9 @@ Features:
   - Storage is keyed by a per-run captain id rather than captain name, so names are not reserved forever.
 - **Config**
   - Show or hide individual menu features by panel.
-  - Bank stays available.
+  - Per-panel Show All and Hide All controls.
+  - Hide empty panels automatically.
+  - Configure London Bank and Cheat Menu Bank separately.
 
 ## Installation
 

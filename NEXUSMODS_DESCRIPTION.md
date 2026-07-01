@@ -67,7 +67,9 @@ This is a BepInEx 5 plugin for Sunless Sea. The main download is a drop-in packa
 **Config**
 
 - Show or hide individual menu features by panel.
-- Bank stays available.
+- Per-panel Show All and Hide All controls.
+- Hide empty panels automatically.
+- Configure London Bank and Cheat Menu Bank separately.
 
 ### Installation
 
