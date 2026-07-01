@@ -4,7 +4,7 @@ Cheat and quality-of-life mod for **Sunless Sea**.
 
 Author: countlessbats
 
-Current version: **2.18.2**
+Current version: **2.18.3**
 
 ## What It Does
 
@@ -21,7 +21,6 @@ Features:
   - Preview exact Terror gains on storylet branch descriptions.
   - Grant Something Awaits You with a configurable hotkey, including the normal log message.
   - Time acceleration with configurable toggle and hold keys.
-  - Skip startup logos and the title-screen fade-up.
 - **7 Numbers**
   - Set Iron, Mirrors, Pages, Hearts, and Veils.
   - Set Hunger, Terror, and Wounds.

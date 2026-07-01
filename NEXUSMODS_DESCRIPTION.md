@@ -22,7 +22,6 @@ This is a BepInEx 5 plugin for Sunless Sea. The main download is a drop-in packa
 - Preview exact Terror gains on storylet branch descriptions.
 - Grant Something Awaits You with a configurable hotkey, including the normal log message.
 - Time acceleration with configurable toggle and hold keys.
-- Skip startup logos and the title-screen fade-up.
 
 **7 Numbers**
 

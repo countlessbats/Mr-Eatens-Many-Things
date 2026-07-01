@@ -14,7 +14,7 @@ using Sunless.Game.UI.Menus;
 
 namespace SunlessQoL
 {
-    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.18.2")]
+    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.18.3")]
     public class QoLPlugin : BaseUnityPlugin
     {
         public const string GUID = "uptoh.sunless.manythings";
@@ -24,7 +24,7 @@ namespace SunlessQoL
 
         // ---- config (persisted to BepInEx/config) ----
         private ConfigEntry<float> _terror, _hunger, _fuel, _damage;
-        private ConfigEntry<bool> _disableExplosions, _previewTerror, _skipFrontMatter;
+        private ConfigEntry<bool> _disableExplosions, _previewTerror;
         private ConfigEntry<float> _accel;
         private ConfigEntry<KeyCode> _toggleKey, _holdKey, _sayKey;
 
@@ -32,8 +32,6 @@ namespace SunlessQoL
         internal static float DamageMult = 1f;
         internal static bool DisableExplosions;
         internal static bool PreviewTerror;
-        internal static bool SkipFrontMatter;
-        internal static bool SkipNextTitleFade;
         private const float EngineHeatCap = 10f;
         private const int FallenLondonAreaId = 100321;
         private static Sunless.Game.UI.Gazetteer.Tab _nativeBankTab;
@@ -123,9 +121,6 @@ namespace SunlessQoL
                 "When true, engine boost still works, but engine heat is capped low enough to prevent fires and explosions.");
             _previewTerror = Config.Bind("ZeeLaw", "PreviewTerror", false,
                 "When true, Terror storylet preview icons show the exact amount.");
-            _skipFrontMatter = Config.Bind("ZeeLaw", "SkipFrontMatter", true,
-                "When true, skip startup logos and the title-screen fade-up.");
-            SkipFrontMatter = _skipFrontMatter == null || _skipFrontMatter.Value;
             _accel = Config.Bind("TimeAcceleration", "Factor", 3f,
                 new ConfigDescription("Time acceleration multiplier.",
                     new AcceptableValueRange<float>(1f, 10f)));
@@ -146,12 +141,6 @@ namespace SunlessQoL
             PatchOne(h, typeof(NativeBankDockPatch));
             PatchOne(h, typeof(NativeBankUndockPatch));
             PatchOne(h, typeof(NativeBankOpenPatch));
-            PatchOne(h, typeof(IntroSkipPatch));
-            PatchOne(h, typeof(IntroLogoSkipPatch));
-            PatchOne(h, typeof(IntroWarningSkipPatch));
-            PatchOne(h, typeof(IntroSdkWaitSkipPatch));
-            PatchOne(h, typeof(TitleFadeSkipPatch));
-            PatchOne(h, typeof(TransitionFadeSkipPatch));
             Logger.LogInfo("Mr Eaten's Many Things loaded; patch registration finished.");
         }
 
@@ -270,11 +259,6 @@ namespace SunlessQoL
                 _echoesRect.anchoredPosition = _echoesBasePosition + new Vector2(shifted ? 90f : 0f, 0f);
             }
             catch (Exception e) { Log.LogError("Moving Echoes display failed: " + e); }
-        }
-
-        internal static void LoadTitleScreenNow()
-        {
-            UnityEngine.Application.LoadLevelAsync("TitleScreen");
         }
 
         // Renders the bank natively into the Gazetteer's two book pages as grids of
@@ -502,7 +486,6 @@ namespace SunlessQoL
             DamageMult = _damage.Value;
             DisableExplosions = _disableExplosions != null && _disableExplosions.Value;
             PreviewTerror = _previewTerror != null && _previewTerror.Value;
-            SkipFrontMatter = _skipFrontMatter == null || _skipFrontMatter.Value;
             try { ApplyRateConstants(); }
             catch (Exception e) { Log.LogError("ApplyRateConstants threw: " + e); }
             try { HandleKeys(); }
@@ -767,10 +750,6 @@ namespace SunlessQoL
 
             GUILayout.Label(_accelerating ? "Status: ACCELERATING x" + _accel.Value.ToString("0.0")
                                           : "Status: normal speed");
-
-            GUILayout.Space(12f);
-            GUILayout.Label("STARTUP", _header);
-            _skipFrontMatter.Value = GUILayout.Toggle(_skipFrontMatter.Value, "Skip Front Matter");
         }
 
         private void DrawSevenNumbers()
@@ -1171,7 +1150,21 @@ namespace SunlessQoL
                 if (gp == null || gp.CurrentCharacter == null) return "(empty)";
                 System.Collections.Generic.KeyValuePair<Sunless.Game.Entities.Combat.CombatItem, int> kv =
                     gp.CurrentCharacter.GetCombatItem(slotNumber);
-                return kv.Key != null ? kv.Key.Name : "(empty)";
+                if (kv.Key != null) return kv.Key.Name;
+
+                System.Collections.Generic.IEnumerable<Sunless.Game.Entities.Combat.CombatItemSlotInformation> slots =
+                    gp.CurrentCharacter.CombatItems;
+                if (slots != null)
+                {
+                    foreach (Sunless.Game.Entities.Combat.CombatItemSlotInformation info in slots)
+                    {
+                        if (info == null || info.SlotNumber != slotNumber) continue;
+                        Sunless.Game.Entities.Combat.CombatItem item =
+                            Sunless.Game.Data.S3Repositories.CombatItemRepository.Instance.GetByQualityRequired(info.AssociatedQualityId);
+                        if (item != null) return item.Name;
+                    }
+                }
+                return "(empty)";
             }
             catch { return "(empty)"; }
         }
@@ -1247,7 +1240,13 @@ namespace SunlessQoL
             {
                 GameProvider gp = GameProvider.Instance;
                 if (gp == null || gp.CurrentCharacter == null || item == null) return;
-                gp.CurrentCharacter.SwitchCombatItemSlot(item, slotNumber);
+                Quality q = Canonical(item.AssociatedQualityId);
+                if (q == null && item.AssociatedQuality != null) q = item.AssociatedQuality;
+                if (q != null && gp.CurrentCharacter.GetUnmodifiedQualityLevel(q) <= 0)
+                    gp.CurrentCharacter.AcquireQualityAtExplicitLevel(q, 1);
+
+                gp.CurrentCharacter.RemoveItemFromSlot(slotNumber);
+                gp.CurrentCharacter.SetCombatItemSlot(item.AssociatedQualityId, slotNumber);
                 RefreshCombatItems();
                 _status = item.Name + " -> weapon slot " + slotNumber + ".";
                 Log.LogInfo(_status);
@@ -1278,8 +1277,32 @@ namespace SunlessQoL
             {
                 Sunless.Game.ApplicationProviders.OfficersProvider op = Sunless.Game.ApplicationProviders.OfficersProvider.Instance;
                 if (op != null && op.Officers != null) op.Officers.UpdateCombatStats();
+                RefreshCombatProviderUsableItems();
             }
             catch (Exception e) { Log.LogError("RefreshCombatItems: " + e); }
+        }
+
+        private static void RefreshCombatProviderUsableItems()
+        {
+            try
+            {
+                Type cpType = Type.GetType("Sunless.Game.ApplicationProviders.CombatProvider, Sunless.Game");
+                if (cpType == null) return;
+                System.Reflection.PropertyInfo instanceProp = cpType.GetProperty("Instance",
+                    System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                if (instanceProp == null) return;
+                object provider = instanceProp.GetValue(null, null);
+                if (provider == null) return;
+                System.Reflection.PropertyInfo playerProp = cpType.GetProperty("Player",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                if (playerProp == null) return;
+                object player = playerProp.GetValue(provider, null);
+                if (player == null) return;
+                System.Reflection.MethodInfo update = player.GetType().GetMethod("UpdateUsableItems",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                if (update != null) update.Invoke(player, null);
+            }
+            catch (Exception e) { Log.LogError("RefreshCombatProviderUsableItems: " + e); }
         }
 
         // Resolve the canonical Quality instance (the one the game's own systems use)
@@ -1957,78 +1980,6 @@ namespace SunlessQoL
         private static void Postfix()
         {
             QoLPlugin.RefreshNativeBankTab();
-        }
-    }
-
-    [HarmonyPatch(typeof(Sunless.Game.Scripts.UI.Intro.IntroScript), "Start")]
-    public static class IntroSkipPatch
-    {
-        private static bool Prefix()
-        {
-            if (!QoLPlugin.SkipFrontMatter) return true;
-            try
-            {
-                QoLPlugin.LoadTitleScreenNow();
-                return false;
-            }
-            catch (Exception e)
-            {
-                QoLPlugin.Log.LogError("Skipping startup front matter failed: " + e);
-                return true;
-            }
-        }
-    }
-
-    [HarmonyPatch(typeof(Sunless.Game.Scripts.UI.Intro.IntroScript), "PlayLogo")]
-    public static class IntroLogoSkipPatch
-    {
-        private static bool Prefix()
-        {
-            if (!QoLPlugin.SkipFrontMatter) return true;
-            QoLPlugin.LoadTitleScreenNow();
-            return false;
-        }
-    }
-
-    [HarmonyPatch(typeof(Sunless.Game.Scripts.UI.Intro.IntroScript), "PlayEAWarning")]
-    public static class IntroWarningSkipPatch
-    {
-        private static bool Prefix()
-        {
-            if (!QoLPlugin.SkipFrontMatter) return true;
-            QoLPlugin.LoadTitleScreenNow();
-            return false;
-        }
-    }
-
-    [HarmonyPatch(typeof(Sunless.Game.Scripts.UI.Intro.IntroScript), "BeginWaitForSDKInitialization")]
-    public static class IntroSdkWaitSkipPatch
-    {
-        private static bool Prefix()
-        {
-            if (!QoLPlugin.SkipFrontMatter) return true;
-            QoLPlugin.LoadTitleScreenNow();
-            return false;
-        }
-    }
-
-    [HarmonyPatch(typeof(Sunless.Game.Scripts.Menus.TitleScreenInit), "Start")]
-    public static class TitleFadeSkipPatch
-    {
-        private static void Prefix()
-        {
-            if (QoLPlugin.SkipFrontMatter) QoLPlugin.SkipNextTitleFade = true;
-        }
-    }
-
-    [HarmonyPatch(typeof(Sunless.Game.ApplicationProviders.TransitionProvider), "FadeIn", new Type[] { typeof(float) })]
-    public static class TransitionFadeSkipPatch
-    {
-        private static void Prefix(ref float duration)
-        {
-            if (!QoLPlugin.SkipFrontMatter || !QoLPlugin.SkipNextTitleFade) return;
-            QoLPlugin.SkipNextTitleFade = false;
-            duration = 0f;
         }
     }
 
