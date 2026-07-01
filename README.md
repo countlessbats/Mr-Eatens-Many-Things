@@ -4,7 +4,7 @@ Cheat and quality-of-life mod for **Sunless Sea**.
 
 Author: countlessbats
 
-Current version: **2.18.1**
+Current version: **2.18.2**
 
 ## What It Does
 
@@ -30,7 +30,7 @@ Features:
   - Set Hull.
   - Swap to any ship.
   - Equip and unequip valid ship equipment in Deck, Forward, Aft, Auxiliary, Bridge, and Engines slots.
-  - Equip and unequip combat item slots with a searchable valid-item picker.
+  - Equip and unequip the six weapon item slots with a searchable valid-item picker.
 - **The Crew**
   - Set Crew.
   - Assign and remove officers from officer slots.

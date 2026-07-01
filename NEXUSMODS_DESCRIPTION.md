@@ -41,7 +41,7 @@ This is a BepInEx 5 plugin for Sunless Sea. The main download is a drop-in packa
 - Set current Hull.
 - Swap to any ship.
 - Equip valid ship gear into Deck, Forward, Aft, Auxiliary, Bridge, and Engines slots.
-- Equip valid combat items into combat item slots with a searchable picker.
+- Equip valid combat items into the six weapon item slots with a searchable picker.
 - Empty ship equipment slots.
 
 **The Crew**

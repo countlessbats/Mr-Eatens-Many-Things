@@ -14,7 +14,7 @@ using Sunless.Game.UI.Menus;
 
 namespace SunlessQoL
 {
-    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.18.1")]
+    [BepInPlugin(GUID, "Mr Eaten's Many Things", "2.18.2")]
     public class QoLPlugin : BaseUnityPlugin
     {
         public const string GUID = "uptoh.sunless.manythings";
@@ -38,6 +38,9 @@ namespace SunlessQoL
         private const int FallenLondonAreaId = 100321;
         private static Sunless.Game.UI.Gazetteer.Tab _nativeBankTab;
         private static System.Reflection.FieldInfo _tabButtonField;
+        private static RectTransform _echoesRect;
+        private static Vector2 _echoesBasePosition;
+        private static bool _echoesPositionCaptured;
 
         // ---- captured vanilla nav-constant defaults (grabbed once) ----
         private bool _captured;
@@ -77,8 +80,11 @@ namespace SunlessQoL
         private System.Collections.Generic.List<Quality> _allGear;
         private System.Collections.Generic.Dictionary<int, System.Collections.Generic.List<Quality>> _gearBySlot;
         private System.Collections.Generic.List<Quality> _officerSlots;
-        private System.Collections.Generic.List<Quality> _combatSlots;
         private System.Collections.Generic.List<Quality> _ships;
+        private System.Collections.Generic.List<Sunless.Game.Entities.Combat.CombatItem> _allCombatItems;
+        private int _selectedCombatSlot = -1;
+        private Vector2 _combatItemScroll;
+        private string _combatItemSearch = "";
         private bool _selectedShip;
         private static System.Reflection.MethodInfo _getByIdMethod;
         private string _hull = "";
@@ -119,6 +125,7 @@ namespace SunlessQoL
                 "When true, Terror storylet preview icons show the exact amount.");
             _skipFrontMatter = Config.Bind("ZeeLaw", "SkipFrontMatter", true,
                 "When true, skip startup logos and the title-screen fade-up.");
+            SkipFrontMatter = _skipFrontMatter == null || _skipFrontMatter.Value;
             _accel = Config.Bind("TimeAcceleration", "Factor", 3f,
                 new ConfigDescription("Time acceleration multiplier.",
                     new AcceptableValueRange<float>(1f, 10f)));
@@ -140,6 +147,9 @@ namespace SunlessQoL
             PatchOne(h, typeof(NativeBankUndockPatch));
             PatchOne(h, typeof(NativeBankOpenPatch));
             PatchOne(h, typeof(IntroSkipPatch));
+            PatchOne(h, typeof(IntroLogoSkipPatch));
+            PatchOne(h, typeof(IntroWarningSkipPatch));
+            PatchOne(h, typeof(IntroSdkWaitSkipPatch));
             PatchOne(h, typeof(TitleFadeSkipPatch));
             PatchOne(h, typeof(TransitionFadeSkipPatch));
             Logger.LogInfo("Mr Eaten's Many Things loaded; patch registration finished.");
@@ -235,8 +245,36 @@ namespace SunlessQoL
                 if (_tabButtonField == null) return;
                 UnityEngine.UI.Button b = _tabButtonField.GetValue(_nativeBankTab) as UnityEngine.UI.Button;
                 if (b != null && b.gameObject != null) b.gameObject.SetActive(visible);
+                SetEchoesShifted(visible);
             }
             catch (Exception e) { Log.LogError("Native Bank tab visibility failed: " + e); }
+        }
+
+        internal static void RegisterEchoesDisplay(RectTransform rt)
+        {
+            if (rt == null) return;
+            _echoesRect = rt;
+            if (!_echoesPositionCaptured)
+            {
+                _echoesBasePosition = rt.anchoredPosition;
+                _echoesPositionCaptured = true;
+            }
+            SetEchoesShifted(IsCurrentPortLondon());
+        }
+
+        private static void SetEchoesShifted(bool shifted)
+        {
+            try
+            {
+                if (_echoesRect == null || !_echoesPositionCaptured) return;
+                _echoesRect.anchoredPosition = _echoesBasePosition + new Vector2(shifted ? 90f : 0f, 0f);
+            }
+            catch (Exception e) { Log.LogError("Moving Echoes display failed: " + e); }
+        }
+
+        internal static void LoadTitleScreenNow()
+        {
+            UnityEngine.Application.LoadLevelAsync("TitleScreen");
         }
 
         // Renders the bank natively into the Gazetteer's two book pages as grids of
@@ -655,6 +693,8 @@ namespace SunlessQoL
                 _lastFocus = "";
                 _selectedSlot = -1;
                 _gearSearch = "";
+                _selectedCombatSlot = -1;
+                _combatItemSearch = "";
                 _selectedShip = false;
                 _shipLoaded = false;
                 _crewLoaded = false;
@@ -919,19 +959,6 @@ namespace SunlessQoL
             return _officerSlots;
         }
 
-        private System.Collections.Generic.List<Quality> CombatSlots()
-        {
-            if (_combatSlots != null) return _combatSlots;
-            _combatSlots = new System.Collections.Generic.List<Quality>();
-            try
-            {
-                foreach (Quality q in WellKnownQualityProvider.CombatEquipmentSlots)
-                    if (q != null) _combatSlots.Add(q);
-            }
-            catch (Exception e) { Log.LogError("CombatSlots build failed: " + e); }
-            return _combatSlots;
-        }
-
         // Slot set depends on the active tab: The Ship -> ship slots, The Crew -> officer slots.
         private Quality CurSlotQ(int i)
         {
@@ -940,19 +967,12 @@ namespace SunlessQoL
                 System.Collections.Generic.List<Quality> l = OfficerSlots();
                 return (i >= 0 && i < l.Count) ? l[i] : null;
             }
-            if (_tab == 2 && i >= 100)
-            {
-                System.Collections.Generic.List<Quality> l = CombatSlots();
-                int c = i - 100;
-                return (c >= 0 && c < l.Count) ? l[c] : null;
-            }
             return SlotQuality(i);
         }
 
         private string CurSlotName(int i)
         {
             if (_tab == 3) { Quality q = CurSlotQ(i); return q != null ? q.Name : "?"; }
-            if (_tab == 2 && i >= 100) { Quality q = CurSlotQ(i); return q != null ? q.Name : "?"; }
             return (i >= 0 && i < SlotNames.Length) ? SlotNames[i] : "?";
         }
 
@@ -1028,6 +1048,7 @@ namespace SunlessQoL
             }
 
             if (_selectedSlot >= 0) { DrawGearList(); return; }
+            if (_selectedCombatSlot >= 0) { DrawCombatItemList(); return; }
             if (_selectedShip) { DrawShipList(); return; }
 
             Quality ship = gp.CurrentCharacter.Ship;
@@ -1070,10 +1091,10 @@ namespace SunlessQoL
             GUILayout.EndHorizontal();
 
             GUILayout.Space(8f);
-            GUILayout.Label("Combat-item slots (click a slot to assign):", _header);
-            System.Collections.Generic.List<Quality> combat = CombatSlots();
-            if (combat.Count == 0) GUILayout.Label("(No combat item slots found.)");
-            for (int s = 0; s < combat.Count; s++) SlotButton(100 + s);
+            GUILayout.Label("Weapon slots (click a slot to assign):", _header);
+            GUILayout.BeginHorizontal();
+            for (int s = 1; s <= 6; s++) CombatItemSlotButton(s);
+            GUILayout.EndHorizontal();
         }
 
         private void DrawShipList()
@@ -1105,6 +1126,160 @@ namespace SunlessQoL
             }
             catch (Exception e) { Log.LogError("Ships build failed: " + e); }
             return _ships;
+        }
+
+        private System.Collections.Generic.List<Sunless.Game.Entities.Combat.CombatItem> AllCombatItems()
+        {
+            if (_allCombatItems != null) return _allCombatItems;
+            _allCombatItems = new System.Collections.Generic.List<Sunless.Game.Entities.Combat.CombatItem>();
+            try
+            {
+                System.Collections.Generic.List<Sunless.Game.Entities.Combat.CombatItem> all =
+                    Sunless.Game.Data.S3Repositories.CombatItemRepository.Instance.GetAllForPlayer();
+                if (all != null)
+                {
+                    foreach (Sunless.Game.Entities.Combat.CombatItem item in all)
+                        if (item != null) _allCombatItems.Add(item);
+                    _allCombatItems.Sort(delegate(Sunless.Game.Entities.Combat.CombatItem a, Sunless.Game.Entities.Combat.CombatItem b)
+                    {
+                        string an = a != null && a.Name != null ? a.Name : "";
+                        string bn = b != null && b.Name != null ? b.Name : "";
+                        return string.Compare(an, bn, StringComparison.OrdinalIgnoreCase);
+                    });
+                }
+            }
+            catch (Exception e) { Log.LogError("AllCombatItems build failed: " + e); }
+            return _allCombatItems;
+        }
+
+        private void CombatItemSlotButton(int slotNumber)
+        {
+            string label = "Slot " + slotNumber + "\n" + CurrentCombatItemName(slotNumber);
+            if (GUILayout.Button(label, GUILayout.Width(80f), GUILayout.Height(54f)))
+            {
+                _selectedCombatSlot = slotNumber;
+                _combatItemScroll = Vector2.zero;
+                _combatItemSearch = "";
+            }
+        }
+
+        private string CurrentCombatItemName(int slotNumber)
+        {
+            try
+            {
+                GameProvider gp = GameProvider.Instance;
+                if (gp == null || gp.CurrentCharacter == null) return "(empty)";
+                System.Collections.Generic.KeyValuePair<Sunless.Game.Entities.Combat.CombatItem, int> kv =
+                    gp.CurrentCharacter.GetCombatItem(slotNumber);
+                return kv.Key != null ? kv.Key.Name : "(empty)";
+            }
+            catch { return "(empty)"; }
+        }
+
+        private void DrawCombatItemList()
+        {
+            int slot = _selectedCombatSlot;
+            GUILayout.Label("Weapon slot " + slot, _header);
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("< Back", GUILayout.Width(80f))) { _selectedCombatSlot = -1; return; }
+            if (GUILayout.Button("Empty this slot")) { RemoveCombatItem(slot); _selectedCombatSlot = -1; return; }
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Search", GUILayout.Width(55f));
+            string newSearch = GUILayout.TextField(_combatItemSearch ?? "", GUILayout.Width(250f));
+            if (newSearch != _combatItemSearch) { _combatItemSearch = newSearch; _combatItemScroll = Vector2.zero; }
+            GUILayout.EndHorizontal();
+
+            System.Collections.Generic.List<Sunless.Game.Entities.Combat.CombatItem> options = FilterCombatItems(_combatItemSearch);
+            if (options.Count == 0) GUILayout.Label("(No combat items found.)");
+            else GUILayout.Label(options.Count + " options");
+
+            float viewHeight = 300f;
+            float rowHeight = 28f;
+            int first = 0;
+            if (options.Count > 0) first = ((int)(_combatItemScroll.y / rowHeight)) - 2;
+            if (first < 0) first = 0;
+            int visible = ((int)(viewHeight / rowHeight)) + 7;
+            int last = first + visible;
+            if (last > options.Count) last = options.Count;
+
+            Sunless.Game.Entities.Combat.CombatItem chosen = null;
+            _combatItemScroll = GUILayout.BeginScrollView(_combatItemScroll, GUILayout.Height(viewHeight));
+            if (first > 0) GUILayout.Space(first * rowHeight);
+            for (int i = first; i < last; i++)
+            {
+                Sunless.Game.Entities.Combat.CombatItem item = options[i];
+                if (GUILayout.Button(item.Name, GUILayout.Height(24f))) chosen = item;
+            }
+            if (last < options.Count) GUILayout.Space((options.Count - last) * rowHeight);
+            GUILayout.EndScrollView();
+
+            if (chosen != null) { AssignCombatItem(slot, chosen); _selectedCombatSlot = -1; }
+        }
+
+        private System.Collections.Generic.List<Sunless.Game.Entities.Combat.CombatItem> FilterCombatItems(string search)
+        {
+            System.Collections.Generic.List<Sunless.Game.Entities.Combat.CombatItem> result =
+                new System.Collections.Generic.List<Sunless.Game.Entities.Combat.CombatItem>();
+            string s = (search ?? "").Trim();
+            foreach (Sunless.Game.Entities.Combat.CombatItem item in AllCombatItems())
+            {
+                if (item == null) continue;
+                if (s.Length > 0)
+                {
+                    string name = item.Name ?? "";
+                    string desc = item.Description ?? "";
+                    if (name.IndexOf(s, StringComparison.OrdinalIgnoreCase) < 0 &&
+                        desc.IndexOf(s, StringComparison.OrdinalIgnoreCase) < 0 &&
+                        item.AssociatedQualityId.ToString().IndexOf(s, StringComparison.OrdinalIgnoreCase) < 0)
+                        continue;
+                }
+                result.Add(item);
+            }
+            return result;
+        }
+
+        private void AssignCombatItem(int slotNumber, Sunless.Game.Entities.Combat.CombatItem item)
+        {
+            try
+            {
+                GameProvider gp = GameProvider.Instance;
+                if (gp == null || gp.CurrentCharacter == null || item == null) return;
+                gp.CurrentCharacter.SwitchCombatItemSlot(item, slotNumber);
+                RefreshCombatItems();
+                _status = item.Name + " -> weapon slot " + slotNumber + ".";
+                Log.LogInfo(_status);
+            }
+            catch (Exception e)
+            {
+                _status = "Weapon slot failed: " + e.Message;
+                Log.LogError(e);
+            }
+        }
+
+        private void RemoveCombatItem(int slotNumber)
+        {
+            try
+            {
+                GameProvider gp = GameProvider.Instance;
+                if (gp == null || gp.CurrentCharacter == null) return;
+                gp.CurrentCharacter.RemoveItemFromSlot(slotNumber);
+                RefreshCombatItems();
+                _status = "Weapon slot " + slotNumber + " emptied.";
+            }
+            catch (Exception e) { _status = "Remove failed: " + e.Message; Log.LogError(e); }
+        }
+
+        private static void RefreshCombatItems()
+        {
+            try
+            {
+                Sunless.Game.ApplicationProviders.OfficersProvider op = Sunless.Game.ApplicationProviders.OfficersProvider.Instance;
+                if (op != null && op.Officers != null) op.Officers.UpdateCombatStats();
+            }
+            catch (Exception e) { Log.LogError("RefreshCombatItems: " + e); }
         }
 
         // Resolve the canonical Quality instance (the one the game's own systems use)
@@ -1752,7 +1927,7 @@ namespace SunlessQoL
                     ? button.gameObject.GetComponent<RectTransform>()
                     : label.gameObject.GetComponent<RectTransform>();
                 if (rt == null) return;
-                rt.anchoredPosition = new Vector2(rt.anchoredPosition.x + 90f, rt.anchoredPosition.y);
+                QoLPlugin.RegisterEchoesDisplay(rt);
             }
             catch (Exception e) { QoLPlugin.Log.LogError("Moving Echoes display failed: " + e); }
         }
@@ -1793,7 +1968,7 @@ namespace SunlessQoL
             if (!QoLPlugin.SkipFrontMatter) return true;
             try
             {
-                UnityEngine.Application.LoadLevelAsync("TitleScreen");
+                QoLPlugin.LoadTitleScreenNow();
                 return false;
             }
             catch (Exception e)
@@ -1801,6 +1976,39 @@ namespace SunlessQoL
                 QoLPlugin.Log.LogError("Skipping startup front matter failed: " + e);
                 return true;
             }
+        }
+    }
+
+    [HarmonyPatch(typeof(Sunless.Game.Scripts.UI.Intro.IntroScript), "PlayLogo")]
+    public static class IntroLogoSkipPatch
+    {
+        private static bool Prefix()
+        {
+            if (!QoLPlugin.SkipFrontMatter) return true;
+            QoLPlugin.LoadTitleScreenNow();
+            return false;
+        }
+    }
+
+    [HarmonyPatch(typeof(Sunless.Game.Scripts.UI.Intro.IntroScript), "PlayEAWarning")]
+    public static class IntroWarningSkipPatch
+    {
+        private static bool Prefix()
+        {
+            if (!QoLPlugin.SkipFrontMatter) return true;
+            QoLPlugin.LoadTitleScreenNow();
+            return false;
+        }
+    }
+
+    [HarmonyPatch(typeof(Sunless.Game.Scripts.UI.Intro.IntroScript), "BeginWaitForSDKInitialization")]
+    public static class IntroSdkWaitSkipPatch
+    {
+        private static bool Prefix()
+        {
+            if (!QoLPlugin.SkipFrontMatter) return true;
+            QoLPlugin.LoadTitleScreenNow();
+            return false;
         }
     }
 
